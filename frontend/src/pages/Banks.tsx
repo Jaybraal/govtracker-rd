@@ -130,14 +130,18 @@ export default function Banks() {
                     <td className="px-4 py-2.5 text-right font-mono text-gray-400">{fmt(b.depositos_totales)}</td>
                     <td className="px-4 py-2.5 text-right font-mono text-gray-400">{fmt(b.cartera_creditos)}</td>
                     <td className="px-4 py-2.5 text-center">
-                      <span className={`text-xs font-mono ${b.indice_solvencia >= 14 ? 'text-green-400' : b.indice_solvencia >= 12 ? 'text-yellow-400' : 'text-red-400'}`}>
-                        {b.indice_solvencia?.toFixed(1)}%
-                      </span>
+                      {b.indice_solvencia != null ? (
+                        <span className={`text-xs font-mono ${b.indice_solvencia >= 14 ? 'text-green-400' : b.indice_solvencia >= 12 ? 'text-yellow-400' : 'text-red-400'}`}>
+                          {b.indice_solvencia.toFixed(1)}%
+                        </span>
+                      ) : <span className="text-xs text-gray-700">sin dato</span>}
                     </td>
                     <td className="px-4 py-2.5 text-center">
-                      <span className="text-xs font-mono" style={{ color: MORA_COLOR(b.mora_porcentaje) }}>
-                        {b.mora_porcentaje?.toFixed(1)}%
-                      </span>
+                      {b.mora_porcentaje != null ? (
+                        <span className="text-xs font-mono" style={{ color: MORA_COLOR(b.mora_porcentaje) }}>
+                          {b.mora_porcentaje.toFixed(1)}%
+                        </span>
+                      ) : <span className="text-xs text-gray-700">sin dato</span>}
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       {b.monto_fondos_estado > 0
@@ -167,9 +171,9 @@ export default function Banks() {
                   ['Cartera Créditos', fmt(selectedBank.cartera_creditos)],
                   ['Patrimonio', fmt(selectedBank.patrimonio)],
                   ['Utilidad Neta', fmt(selectedBank.utilidad_neta)],
-                  ['Solvencia', `${selectedBank.indice_solvencia?.toFixed(1)}%`],
-                  ['Mora', `${selectedBank.mora_porcentaje?.toFixed(1)}%`],
-                  ['Sucursales', selectedBank.num_sucursales?.toLocaleString()],
+                  ['Solvencia', selectedBank.indice_solvencia != null ? `${selectedBank.indice_solvencia.toFixed(1)}%` : 'sin dato'],
+                  ['Mora', selectedBank.mora_porcentaje != null ? `${selectedBank.mora_porcentaje.toFixed(1)}%` : 'sin dato'],
+                  ['Sucursales', selectedBank.num_sucursales != null ? selectedBank.num_sucursales.toLocaleString() : 'sin dato'],
                 ].map(([k, v]) => (
                   <div key={k as string} className="bg-gray-800 rounded-lg p-3">
                     <p className="text-xs text-gray-500">{k as string}</p>

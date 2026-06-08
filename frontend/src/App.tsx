@@ -1,5 +1,6 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, useLocation } from 'react-router-dom'
 import Layout from './components/Layout'
+import ErrorBoundary from './components/ErrorBoundary'
 import Dashboard from './pages/Dashboard'
 import Contracts from './pages/Contracts'
 import ContractDetail from './pages/ContractDetail'
@@ -20,8 +21,10 @@ import Legislators from './pages/Legislators'
 import Inhabilitados from './pages/Inhabilitados'
 
 export default function App() {
+  const location = useLocation()
   return (
     <Layout>
+      <ErrorBoundary key={location.pathname}>
       <Routes>
         <Route path="/"                          element={<Dashboard />} />
         <Route path="/contracts"                 element={<Contracts />} />
@@ -42,6 +45,7 @@ export default function App() {
         <Route path="/parties"                   element={<PoliticalParties />} />
         <Route path="/legislators"               element={<Legislators />} />
       </Routes>
+      </ErrorBoundary>
     </Layout>
   )
 }
