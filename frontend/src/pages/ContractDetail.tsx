@@ -128,9 +128,9 @@ export default function ContractDetail() {
               {[
                 [c.es_mayor_100m, 'Contrato >RD$100M', 'badge-red'],
                 [c.financiado_prestamo, 'Financiado con préstamo', 'badge-blue'],
-                [c.tiene_adendas, `${c.num_adendas} adenda(s)`, 'badge-yellow'],
-                [c.incremento_porcentual >= 25, `Incremento ${c.incremento_porcentual.toFixed(0)}%`, 'badge-yellow'],
-                [c.retraso_dias > 0, `Retraso ${c.retraso_dias} días`, 'badge-red'],
+                [c.tiene_adendas, `${c.num_adendas ?? 0} adenda(s)`, 'badge-yellow'],
+                [c.incremento_porcentual != null && c.incremento_porcentual >= 25, `Incremento ${(c.incremento_porcentual ?? 0).toFixed(0)}%`, 'badge-yellow'],
+                [c.retraso_dias > 0, `Retraso ${c.retraso_dias ?? 0} días`, 'badge-red'],
                 [c.modalidad === 'contratacion_directa', 'Contratación directa', 'badge-yellow'],
               ].filter(([cond]) => cond).map(([_, label, cls]) => (
                 <span key={label as string} className={`block ${cls as string}`}>{label as string}</span>
