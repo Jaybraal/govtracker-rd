@@ -94,7 +94,9 @@ export default function Companies() {
                 </td>
                 <td className="px-4 py-3 text-center text-gray-400 text-xs">{c.total_instituciones}</td>
                 <td className="px-4 py-3 text-center">
-                  {c.indice_concentracion > 80 ? (
+                  {c.indice_concentracion == null ? (
+                    <span className="text-gray-600 text-xs">—</span>
+                  ) : c.indice_concentracion > 80 ? (
                     <span className="badge-red">{c.indice_concentracion.toFixed(0)}%</span>
                   ) : c.indice_concentracion > 50 ? (
                     <span className="badge-yellow">{c.indice_concentracion.toFixed(0)}%</span>

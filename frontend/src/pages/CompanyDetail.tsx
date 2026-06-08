@@ -33,7 +33,7 @@ export default function CompanyDetail() {
           ['Monto Total', fmt(c.total_monto_recibido), 'text-white'],
           ['Contratos', c.total_contratos.toLocaleString(), 'text-white'],
           ['Instituciones', c.total_instituciones.toString(), 'text-white'],
-          ['Concentración', `${c.indice_concentracion.toFixed(0)}%`, c.indice_concentracion > 80 ? 'text-red-400' : 'text-white'],
+          ['Concentración', c.indice_concentracion != null ? `${c.indice_concentracion.toFixed(0)}%` : '—', c.indice_concentracion > 80 ? 'text-red-400' : 'text-white'],
         ].map(([label, value, cls]) => (
           <div key={label as string} className="card text-center">
             <p className="text-xs text-gray-500 mb-1">{label as string}</p>
