@@ -160,6 +160,63 @@ def import_providers() -> int:
     return total
 
 
+# ─── Fase 1b: Representantes/contactos registrados en el RPE ────────────────
+
+def import_representantes() -> int:
+    """
+    El RPE (proveedores-del-estado.csv) trae, para cada proveedor, un contacto
+    registrado ante el Estado: CONTACTO (nombre), POSICION_CONTACTO (cargo:
+    Representante, Gerente, Presidente, etc.), TELEFONO_CONTACTO/CELULAR_CONTACTO
+    y CORREO_CONTACTO. Es la única fuente pública gratuita de "representante
+    legal" disponible en bulk (DGII no publica esto). Una fila por empresa.
+    """
+    logger.info("DGCP bulk: importando representantes/contactos (RPE) → representantes_legales...")
+
+    with engine.begin() as conn:
+        ya_importado = conn.execute(text("SELECT COUNT(*) FROM representantes_legales")).scalar()
+        if ya_importado:
+            logger.info(f"DGCP bulk: representantes_legales ya tiene {ya_importado} filas — se omite")
+            return 0
+
+        rpe_to_id = dict(conn.execute(
+            text("SELECT rpe, id FROM empresas WHERE rpe IS NOT NULL AND rpe != ''")
+        ).all())
+
+    sql = text("""
+        INSERT INTO representantes_legales
+            (company_id, nombre, cedula, cargo, email, telefono, activo, created_at)
+        VALUES (:company_id, :nombre, NULL, :cargo, :email, :telefono, 1, CURRENT_TIMESTAMP)
+    """)
+
+    batch, seen_company = [], set()
+    total = 0
+    with open(PROVEEDORES_CSV, encoding="utf-8-sig") as f, engine.begin() as conn:
+        for row in csv.DictReader(f):
+            rpe = _clean(row.get("RPE"))
+            company_id = rpe_to_id.get(rpe) if rpe else None
+            nombre = _clean(row.get("CONTACTO"))
+            if not company_id or not nombre or company_id in seen_company:
+                continue
+            seen_company.add(company_id)
+            batch.append({
+                "company_id": company_id,
+                "nombre": nombre[:500],
+                "cargo": _clean(row.get("POSICION_CONTACTO")),
+                "email": _first_valid(row.get("CORREO_CONTACTO"), row.get("CORREO_NOTIFICACIONES")),
+                "telefono": _first_valid(row.get("TELEFONO_CONTACTO"), row.get("CELULAR_CONTACTO")),
+            })
+            if len(batch) >= BATCH_SIZE:
+                conn.execute(sql, batch)
+                total += len(batch)
+                logger.info(f"  representantes: {total} procesados...")
+                batch = []
+        if batch:
+            conn.execute(sql, batch)
+            total += len(batch)
+    logger.info(f"DGCP bulk: {total} representantes/contactos importados")
+    return total
+
+
 # ─── Fase 2: Resolver instituciones desde siglas de códigos de proceso ───────
 
 def build_siglas_map() -> dict:
@@ -394,6 +451,7 @@ def run_dgcp_bulk_import() -> dict:
         )
 
     n_providers = import_providers()
+    n_representantes = import_representantes()
 
     siglas_map = build_siglas_map()
     db = SessionLocal()
@@ -405,7 +463,7 @@ def run_dgcp_bulk_import() -> dict:
     finally:
         db.close()
 
-    result = {"proveedores": n_providers, "contratos": n_contracts, "instituciones_resueltas": len(sigla_to_inst_id), "inhabilitados": n_inhabilitados}
+    result = {"proveedores": n_providers, "representantes": n_representantes, "contratos": n_contracts, "instituciones_resueltas": len(sigla_to_inst_id), "inhabilitados": n_inhabilitados}
     logger.info(f"DGCP bulk import completado: {result}")
     return result
 

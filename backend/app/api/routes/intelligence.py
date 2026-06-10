@@ -67,13 +67,16 @@ def red_persona(
 @router.get("/resumen")
 def resumen_inteligencia(db: Session = Depends(get_db)):
     """Vista rápida: top 10 personas + top 5 patrones + stats clave."""
-    personas = get_personas_interes(db, limit=10)
+    personas = get_personas_interes(db, limit=200)
     patrones = get_patrones_sospechosos(db)
 
     criticos = [p for p in patrones if p["severidad"] == "critica"]
     altos    = [p for p in patrones if p["severidad"] == "alta"]
 
-    personas_doble_rol = [p for p in personas if "doble_rol" in str(p.get("flags", []))]
+    personas_doble_rol = [
+        p for p in personas
+        if "firmante" in p.get("roles", []) and "representante_legal" in p.get("roles", [])
+    ]
 
     return {
         "top_personas": personas[:10],

@@ -67,7 +67,7 @@ export default function Intelligence() {
       {resumen && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {[
-            { label: 'Personas detectadas', value: resumen.stats.personas_detectadas, color: 'text-white' },
+            { label: 'Personas detectadas', value: resumen.stats.personas_detectadas >= 200 ? '200+' : resumen.stats.personas_detectadas, color: 'text-white' },
             { label: 'Doble rol (firmante + rep.)', value: resumen.stats.personas_doble_rol, color: 'text-red-400' },
             { label: 'Patrones críticos', value: resumen.stats.patrones_criticos, color: 'text-red-400' },
             { label: 'Patrones altos', value: resumen.stats.patrones_altos, color: 'text-orange-400' },
@@ -129,6 +129,9 @@ export default function Intelligence() {
                         {p.roles?.includes('representante_legal') && (
                           <span className="badge-purple text-xs">⚖ rep. legal</span>
                         )}
+                        {p.cargos?.map((cargo: string) => (
+                          <span key={cargo} className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded">{cargo}</span>
+                        ))}
                         {p.roles?.includes('firmante') && p.roles?.includes('representante_legal') && (
                           <span className="badge-red text-xs font-bold">⚠ DOBLE ROL</span>
                         )}
@@ -272,6 +275,9 @@ export default function Intelligence() {
                       <td className="px-4 py-2.5">
                         <p className="text-white font-medium">{n.nombre}</p>
                         {n.cedula && <p className="text-xs text-gray-600 font-mono">{n.cedula}</p>}
+                        {n.cargos?.length > 0 && (
+                          <p className="text-xs text-gray-600">{n.cargos.join(' · ')}</p>
+                        )}
                       </td>
                       <td className="px-4 py-2.5 text-center">
                         {n.apariciones_firmante > 0

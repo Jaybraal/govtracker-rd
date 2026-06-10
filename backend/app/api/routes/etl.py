@@ -37,6 +37,70 @@ async def seed_seguros_senasa():
     return {"status": "ok", "registros": count}
 
 
+@router.post("/scrape/pgr")
+async def scrape_pgr(
+    background_tasks: BackgroundTasks,
+    max_pages: int = Query(100, ge=1, le=991, description="Páginas a scrapear (9 arts/pág)"),
+    incremental: bool = Query(True, description="Para al encontrar URLs ya almacenadas"),
+):
+    """
+    Scraper de comunicados oficiales de la Procuraduría General de la República (pgr.gob.do).
+    Extrae título, cuerpo, fecha, tipo, operación, montos e imputados mencionados.
+    Corre en background. Estado en /etl/scrape/pgr/status
+    """
+    background_tasks.add_task(_run_pgr_scraper_bg, max_pages, incremental)
+    return {
+        "status": "started",
+        "message": f"Scraping PGR — hasta {max_pages} páginas (~{max_pages * 9} artículos), incremental={incremental}",
+    }
+
+
+_pgr_status: dict = {"running": False, "saved": 0, "errors": 0, "last_run": None}
+
+
+async def _run_pgr_scraper_bg(max_pages: int, incremental: bool):
+    from ...etl.scrapers.pgr_scraper import run_pgr_scraper
+    _pgr_status["running"] = True
+    try:
+        count = await run_pgr_scraper(max_pages=max_pages, incremental=incremental)
+        _pgr_status["saved"] = count
+        _pgr_status["last_run"] = "ok"
+    except Exception as e:
+        _pgr_status["last_run"] = f"error: {e}"
+    finally:
+        _pgr_status["running"] = False
+
+
+@router.get("/scrape/pgr/status")
+def pgr_scraper_status():
+    """Estado del scraper PGR y estadísticas de la BD."""
+    from pathlib import Path
+    import sqlite3
+    db_path = Path(__file__).parent.parent.parent.parent / "data" / "pgr.db"
+    stats = {"total": 0, "por_tipo": {}, "operaciones": [], "con_fecha": 0}
+    if db_path.exists():
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        stats["total"] = conn.execute("SELECT COUNT(*) FROM comunicados").fetchone()[0]
+        stats["con_fecha"] = conn.execute(
+            "SELECT COUNT(*) FROM comunicados WHERE fecha IS NOT NULL"
+        ).fetchone()[0]
+        stats["por_tipo"] = {
+            r["tipo"]: r["cnt"]
+            for r in conn.execute(
+                "SELECT tipo, COUNT(*) AS cnt FROM comunicados GROUP BY tipo ORDER BY cnt DESC"
+            ).fetchall()
+        }
+        stats["operaciones"] = [
+            r["operacion"]
+            for r in conn.execute(
+                "SELECT DISTINCT operacion FROM comunicados WHERE operacion IS NOT NULL ORDER BY operacion"
+            ).fetchall()
+        ]
+        conn.close()
+    return {**_pgr_status, "db_stats": stats}
+
+
 @router.post("/seed/seguridad")
 async def seed_seguridad():
     """Siembra el sector Policía / Bomberos / instituciones de seguridad."""

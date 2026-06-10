@@ -6,6 +6,9 @@ backend/venv/
 backend/*.db
 backend/*.db-shm
 backend/*.db-wal
+backend/**/*.db
+backend/**/*.db-shm
+backend/**/*.db-wal
 backend/.env
 backend/data/dgcp_bulk/*.csv
 backend/data/documents/*

@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, AlertTriangle, FileText } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, FileText, ExternalLink, Copy, Check } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import { contractsApi, aiApi } from '../services/api'
 import { useApi } from '../hooks/useApi'
@@ -12,6 +12,44 @@ export default function ContractDetail() {
   const { data: c, loading } = useApi(() => contractsApi.get(Number(id)), [id])
   const [analysis, setAnalysis] = useState<any>(null)
   const [analyzing, setAnalyzing] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const copyCode = () => {
+    if (c?.numero_contrato) {
+      navigator.clipboard.writeText(c.numero_contrato)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
+  // Genera URLs de consulta según la fuente del contrato
+  const buildSourceLinks = (contrato: typeof c) => {
+    if (!contrato) return []
+    const links: { label: string; url: string; primary?: boolean }[] = []
+    const isBulkDGCP = contrato.fuente?.includes('DGCP') || contrato.fuente?.includes('Adjudicaciones SECP')
+    const hasSpecificUrl = contrato.url_fuente &&
+      !contrato.url_fuente.includes('adjudicaciones-secp.csv') &&
+      !contrato.url_fuente.includes('new_dg')
+
+    if (hasSpecificUrl) {
+      links.push({ label: contrato.fuente || 'Ver fuente original', url: contrato.url_fuente!, primary: true })
+    }
+    if (isBulkDGCP && contrato.numero_contrato) {
+      links.push({
+        label: 'Buscar en Portal DGCP',
+        url: `https://www.dgcp.gob.do/index.php/proceso?buscar=${encodeURIComponent(contrato.numero_contrato)}`,
+        primary: !hasSpecificUrl,
+      })
+      links.push({
+        label: 'Ver dataset en Datos Abiertos',
+        url: 'https://datos.gob.do/dataset/adjudicaciones-secp',
+      })
+    }
+    if (!isBulkDGCP && !hasSpecificUrl) {
+      links.push({ label: contrato.fuente || 'Fuente no disponible', url: '#' })
+    }
+    return links
+  }
 
   const runAnalysis = async () => {
     setAnalyzing(true)
@@ -149,10 +187,38 @@ export default function ContractDetail() {
             <Link to={`/institutions/${c.institution_id}`} className="btn-ghost w-full text-center block">
               Ver institución →
             </Link>
+
+            {/* Fuente / código de contrato */}
+            {c.numero_contrato && (
+              <div className="pt-2 border-t border-gray-800">
+                <p className="text-xs text-gray-500 mb-2">Código de contrato</p>
+                <div className="flex items-center gap-2 bg-gray-800 rounded px-3 py-2">
+                  <code className="text-xs text-gray-300 flex-1 truncate">{c.numero_contrato}</code>
+                  <button onClick={copyCode} className="shrink-0 text-gray-500 hover:text-gray-200 transition-colors">
+                    {copied ? <Check size={13} className="text-green-400" /> : <Copy size={13} />}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {c.fuente && (
-              <a href={c.url_fuente || '#'} target="_blank" rel="noopener noreferrer" className="btn-ghost w-full text-center block">
-                Fuente: {c.fuente} →
-              </a>
+              <div className="pt-2 border-t border-gray-800 space-y-1.5">
+                <p className="text-xs text-gray-500">Fuente de datos</p>
+                <p className="text-xs text-gray-400 leading-relaxed">{c.fuente}</p>
+                {buildSourceLinks(c).map((link, i) => (
+                  link.url === '#'
+                    ? <span key={i} className="text-xs text-gray-600 block">Sin enlace directo disponible</span>
+                    : <a key={i} href={link.url} target="_blank" rel="noopener noreferrer"
+                        className={`flex items-center gap-1.5 text-xs w-full px-3 py-2 rounded transition-colors ${
+                          link.primary
+                            ? 'bg-gov-900/40 text-gov-300 hover:bg-gov-900/60 border border-gov-800/40'
+                            : 'bg-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-700'
+                        }`}>
+                        <ExternalLink size={11} className="shrink-0" />
+                        {link.label}
+                      </a>
+                ))}
+              </div>
             )}
           </div>
 

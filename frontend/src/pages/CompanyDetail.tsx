@@ -68,16 +68,21 @@ export default function CompanyDetail() {
 
         {(c as any).representantes?.length > 0 && (
           <div className="card">
-            <h3 className="text-sm font-semibold text-white mb-3">Representantes Legales</h3>
+            <h3 className="text-sm font-semibold text-white mb-3">Representantes / Contactos</h3>
             <div className="space-y-2">
-              {(c as any).representantes.map((r: any) => (
-                <div key={r.id} className="flex items-center gap-3 p-2 bg-gray-800 rounded-lg">
+              {(c as any).representantes.map((r: any, i: number) => (
+                <div key={r.id ?? i} className="flex items-center gap-3 p-2 bg-gray-800 rounded-lg">
                   <div className="w-8 h-8 bg-gov-700/40 rounded-full flex items-center justify-center text-xs text-gov-300 font-bold">
-                    {r.nombre.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+                    {r.nombre.split(' ').filter(Boolean).map((n: string) => n[0]).slice(0, 2).join('')}
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-sm text-white">{r.nombre}</p>
                     <p className="text-xs text-gray-500">{r.cargo || 'Representante'} {r.cedula ? `· ${r.cedula}` : ''}</p>
+                    {(r.telefono || r.email) && (
+                      <p className="text-xs text-gray-600 mt-0.5">
+                        {[r.telefono, r.email].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
                   </div>
                 </div>
               ))}
@@ -88,7 +93,12 @@ export default function CompanyDetail() {
 
       {(c as any).contratos_recientes?.length > 0 && (
         <div className="card">
-          <h3 className="text-sm font-semibold text-white mb-3">Contratos Recientes (Top 20)</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-white">Contratos Recientes (Top 20 por monto)</h3>
+            <Link to={`/contracts?company_id=${id}`} className="text-xs text-gov-400 hover:text-gov-300">
+              Ver todos los contratos ({c.total_contratos.toLocaleString()}) →
+            </Link>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>

@@ -4,10 +4,10 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from 'recharts'
-import { FileText, Building2, Landmark, Banknote, Bell, AlertTriangle, Eye, User } from 'lucide-react'
+import { FileText, Building2, Landmark, Banknote, Bell, AlertTriangle, Eye, HeartPulse } from 'lucide-react'
 import StatCard from '../components/StatCard'
 import PageHeader from '../components/PageHeader'
-import { statsApi, contractsApi, institutionsApi, alertsApi, intelligenceApi, GlobalStats } from '../services/api'
+import { statsApi, contractsApi, institutionsApi, alertsApi, intelligenceApi, segurosApi, GlobalStats } from '../services/api'
 
 const PIE_COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe']
 
@@ -24,6 +24,7 @@ export default function Dashboard() {
   const [topInstitutions, setTopInstitutions] = useState<any[]>([])
   const [alertStats, setAlertStats] = useState<any>(null)
   const [intelResumen, setIntelResumen] = useState<any>(null)
+  const [segurosStats, setSegurosStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -33,12 +34,14 @@ export default function Dashboard() {
       institutionsApi.ranking(10),
       alertsApi.stats(),
       intelligenceApi.resumen().catch(() => null),
-    ]).then(([s, cs, ti, as_, ir]) => {
+      segurosApi.stats().catch(() => null),
+    ]).then(([s, cs, ti, as_, ir, ss]) => {
       setStats(s)
       setContractStats(cs)
       setTopInstitutions(ti)
       setAlertStats(as_)
       setIntelResumen(ir)
+      setSegurosStats(ss)
     }).finally(() => setLoading(false))
   }, [])
 
@@ -118,6 +121,39 @@ export default function Dashboard() {
           to="/contracts?financiado_prestamo=true"
         />
       </div>
+
+      {/* Seguros KPI */}
+      {segurosStats && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <StatCard
+            label="Contratos de Seguros"
+            value={segurosStats.total_contratos?.toLocaleString() ?? '0'}
+            sub={`${segurosStats.empresas_unicas} aseguradoras`}
+            icon={<HeartPulse size={16} />}
+            color="blue"
+            to="/seguros"
+          />
+          <StatCard
+            label="Monto en Seguros (DGCP)"
+            value={fmt(segurosStats.monto_total ?? 0)}
+            sub="Total adjudicado"
+            icon={<HeartPulse size={16} />}
+            color="purple"
+            to="/seguros"
+          />
+          <div className="card border border-red-800/50 bg-red-950/20 flex flex-col justify-between cursor-pointer hover:bg-red-950/30 transition-colors"
+            onClick={() => navigate('/seguros?tab=caso')}>
+            <div className="flex items-center gap-2 mb-1">
+              <AlertTriangle size={14} className="text-red-400" />
+              <p className="text-xs text-red-400 font-medium">Caso SENASA — Operación Cobra</p>
+            </div>
+            <p className="text-xl font-bold text-red-300">{segurosStats.caso_cobra_monto_defraudado}</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {segurosStats.caso_cobra_imputados} imputados · Fuente: PGR oficial
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Top Instituciones */}

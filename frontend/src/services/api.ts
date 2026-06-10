@@ -8,6 +8,7 @@ const api = axios.create({
 export interface Contract {
   id: number
   numero_contrato: string
+  numero_proceso: string | null
   descripcion: string
   objeto: string
   modalidad: string
@@ -17,6 +18,9 @@ export interface Contract {
   monto_pagado: number
   moneda: string
   fecha_firma: string | null
+  fecha_inicio: string | null
+  fecha_fin_planificada: string | null
+  oficial_firmante: string | null
   tiene_adendas: boolean
   num_adendas: number
   incremento_porcentual: number
@@ -30,6 +34,7 @@ export interface Contract {
   institution_id: number
   company_id: number
   fuente: string
+  url_fuente: string | null
 }
 
 export interface Company {
@@ -39,6 +44,10 @@ export interface Company {
   nombre_comercial: string
   tipo_empresa: string
   sector: string
+  telefono: string | null
+  email: string | null
+  direccion: string | null
+  provincia: string | null
   total_contratos: number
   total_monto_recibido: number
   total_instituciones: number
@@ -225,6 +234,12 @@ export const intelligenceApi = {
   patrones: () => api.get('/intelligence/patrones').then(r => r.data),
   redPersona: (nombre: string) =>
     api.get('/intelligence/red-persona', { params: { nombre } }).then(r => r.data),
+}
+
+export const segurosApi = {
+  stats: () => api.get('/seguros/stats').then(r => r.data),
+  topAseguradoras: (anio?: number) =>
+    api.get('/seguros/top-aseguradoras', { params: anio ? { anio } : {} }).then(r => r.data),
 }
 
 export const etlApi = {

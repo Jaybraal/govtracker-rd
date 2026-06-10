@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { Search, Download, Filter, AlertTriangle } from 'lucide-react'
+import { Link, useSearchParams, useNavigate } from 'react-router-dom'
+import { Search, Download, AlertTriangle, X } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import { contractsApi, exportApi, Contract, PagedResponse } from '../services/api'
 import { useApi } from '../hooks/useApi'
@@ -18,6 +18,7 @@ const MODALIDADES = [
 
 export default function Contracts() {
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [modalidad, setModalidad] = useState(searchParams.get('modalidad') ?? '')
@@ -25,6 +26,8 @@ export default function Contracts() {
   const [soloAdendas, setSoloAdendas] = useState(searchParams.get('tiene_adendas') === 'true')
   const [soloMayores, setSoloMayores] = useState(searchParams.get('es_mayor_100m') === 'true')
   const [soloFinanciados, setSoloFinanciados] = useState(searchParams.get('financiado_prestamo') === 'true')
+  const companyId = searchParams.get('company_id')
+  const institutionId = searchParams.get('institution_id')
 
   const params = {
     page, size: 50,
@@ -34,11 +37,13 @@ export default function Contracts() {
     ...(soloAdendas && { tiene_adendas: true }),
     ...(soloMayores && { es_mayor_100m: true }),
     ...(soloFinanciados && { financiado_prestamo: true }),
+    ...(companyId && { company_id: companyId }),
+    ...(institutionId && { institution_id: institutionId }),
   }
 
   const { data, loading } = useApi<PagedResponse<Contract>>(
     () => contractsApi.list(params),
-    [page, search, modalidad, montoMin, soloAdendas, soloMayores, soloFinanciados],
+    [page, search, modalidad, montoMin, soloAdendas, soloMayores, soloFinanciados, companyId, institutionId],
   )
 
   return (
@@ -57,6 +62,20 @@ export default function Contracts() {
           </div>
         }
       />
+
+      {(companyId || institutionId) && (
+        <div className="flex items-center gap-2 text-sm text-gov-300 bg-gov-900/30 border border-gov-800/40 rounded-lg px-3 py-2">
+          <span>
+            Mostrando solo contratos de {companyId ? `la empresa #${companyId}` : `la institución #${institutionId}`}
+          </span>
+          <button
+            onClick={() => navigate('/contracts')}
+            className="ml-auto flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors"
+          >
+            <X size={12} /> Quitar filtro
+          </button>
+        </div>
+      )}
 
       {/* Filtros */}
       <div className="card flex flex-wrap gap-3 items-center">
@@ -152,7 +171,9 @@ export default function Contracts() {
                     {c.es_mayor_100m && <span title=">RD$100M" className="badge-red">$</span>}
                     {c.financiado_prestamo && <span title="Financiado préstamo" className="badge-blue">P</span>}
                     {c.incremento_porcentual >= 25 && (
-                      <AlertTriangle size={12} className="text-yellow-400" title={`+${c.incremento_porcentual}%`} />
+                      <span title={`+${c.incremento_porcentual}%`}>
+                        <AlertTriangle size={12} className="text-yellow-400" />
+                      </span>
                     )}
                   </div>
                 </td>

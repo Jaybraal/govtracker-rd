@@ -19,6 +19,9 @@ import Banks from './pages/Banks'
 import PoliticalParties from './pages/PoliticalParties'
 import Legislators from './pages/Legislators'
 import Inhabilitados from './pages/Inhabilitados'
+import Nominas from './pages/Nominas'
+import Seguros from './pages/Seguros'
+import PGR from './pages/PGR'
 
 export default function App() {
   const location = useLocation()
@@ -44,6 +47,9 @@ export default function App() {
         <Route path="/banks"                     element={<Banks />} />
         <Route path="/parties"                   element={<PoliticalParties />} />
         <Route path="/legislators"               element={<Legislators />} />
+        <Route path="/nominas"                   element={<Nominas />} />
+        <Route path="/seguros"                   element={<Seguros />} />
+        <Route path="/pgr"                       element={<PGR />} />
       </Routes>
       </ErrorBoundary>
     </Layout>

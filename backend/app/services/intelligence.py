@@ -77,6 +77,28 @@ def get_personas_interes(db: Session, limit: int = 50) -> list:
      .having(func.count(func.distinct(LegalRepresentative.company_id)) >= 1)\
      .all()
 
+    # Bulk: empresas y cargos que representa cada persona (evita N+1 sobre miles de reps)
+    empresas_por_nombre = defaultdict(list)
+    cargos_por_nombre = defaultdict(set)
+    for nombre_rep, nombre_comp, cargo in db.query(LegalRepresentative.nombre, Company.nombre, LegalRepresentative.cargo)\
+            .join(Company, Company.id == LegalRepresentative.company_id).all():
+        if len(empresas_por_nombre[nombre_rep]) < 10:
+            empresas_por_nombre[nombre_rep].append(nombre_comp)
+        if cargo:
+            cargos_por_nombre[nombre_rep].add(cargo)
+
+    # Bulk: contratos de las empresas que representa cada persona (evita N+1)
+    contratos_por_nombre = {
+        r.nombre: (r.monto or 0, r.cnt or 0)
+        for r in db.query(
+            LegalRepresentative.nombre,
+            func.sum(Contract.monto_original).label("monto"),
+            func.count(Contract.id).label("cnt"),
+        ).join(Company, Company.id == LegalRepresentative.company_id)
+         .join(Contract, Contract.company_id == Company.id)
+         .group_by(LegalRepresentative.nombre).all()
+    }
+
     for r in reps:
         nombre_norm = _normalize_name(r.nombre)
         p = personas[nombre_norm]
@@ -84,26 +106,13 @@ def get_personas_interes(db: Session, limit: int = 50) -> list:
             p["nombre"] = r.nombre.strip()
         p["roles"].add("representante_legal")
         p["cedula"] = r.cedula
-        # Obtener lista de empresas con consulta separada
-        empresas_lista = db.query(Company.nombre).join(
-            LegalRepresentative, LegalRepresentative.company_id == Company.id
-        ).filter(LegalRepresentative.nombre == r.nombre).limit(10).all()
-        p["empresas_representa"] = [e[0] for e in empresas_lista]
+        p["empresas_representa"] = empresas_por_nombre.get(r.nombre, [])
+        p["cargos"] = sorted(cargos_por_nombre.get(r.nombre, []))[:5]
         p["num_empresas_repr"] = r.num_empresas
 
-        # Obtener contratos de las empresas que representa
-        empresas_contratos = db.query(
-            func.sum(Contract.monto_original).label("monto"),
-            func.count(Contract.id).label("cnt"),
-        ).join(Company, Company.id == Contract.company_id)\
-         .join(LegalRepresentative, LegalRepresentative.company_id == Company.id)\
-         .filter(
-             func.lower(LegalRepresentative.nombre) == func.lower(r.nombre),
-         ).first()
-
-        if empresas_contratos and empresas_contratos.monto:
-            p["total_contratos"] += empresas_contratos.cnt or 0
-            p["total_monto"] += empresas_contratos.monto or 0
+        monto, cnt = contratos_por_nombre.get(r.nombre, (0, 0))
+        p["total_contratos"] += cnt
+        p["total_monto"] += monto
 
     # 3. Calcular flags y score de riesgo
     result = []
@@ -129,9 +138,15 @@ def get_personas_interes(db: Session, limit: int = 50) -> list:
 
         # Representa muchas empresas
         num_repr = p.get("num_empresas_repr", 0)
-        if num_repr >= 3:
+        if num_repr >= 20 and not p.get("cedula"):
+            flags.append(
+                f"🗂️ Contacto registrado de {num_repr} empresas — posible gestor/tramitador "
+                f"de constitución de empresas, requiere verificación de identidad"
+            )
+            score += min(num_repr, 15)
+        elif num_repr >= 3:
             flags.append(f"🏢 Representa legalmente {num_repr} empresas distintas")
-            score += num_repr * 8
+            score += min(num_repr * 8, 80)
 
         # Alto monto asociado
         if p["total_monto"] >= 500_000_000:
@@ -410,6 +425,7 @@ def get_nombres_frecuentes(db: Session, min_apariciones: int = 2) -> list:
         "instituciones": set(),
         "empresas": set(),
         "cedula": None,
+        "cargos": set(),
     })
 
     # Firmantes (sin array_agg — compatible SQLite)
@@ -437,6 +453,21 @@ def get_nombres_frecuentes(db: Session, min_apariciones: int = 2) -> list:
         func.count(func.distinct(LegalRepresentative.company_id)).label("num_comps"),
     ).group_by(LegalRepresentative.nombre, LegalRepresentative.cedula).all()
 
+    # Bulk: empresas y cargos por nombre + monto de contratos por empresa (evita N+1)
+    companias_por_nombre = defaultdict(set)
+    cargos_por_nombre = defaultdict(set)
+    for nombre_rep, comp_id, cargo in db.query(
+        LegalRepresentative.nombre, LegalRepresentative.company_id, LegalRepresentative.cargo
+    ).all():
+        companias_por_nombre[nombre_rep].add(comp_id)
+        if cargo:
+            cargos_por_nombre[nombre_rep].add(cargo)
+
+    monto_por_empresa = dict(
+        db.query(Contract.company_id, func.sum(Contract.monto_original))
+          .group_by(Contract.company_id).all()
+    )
+
     for r in rows2:
         key = _normalize_name(r.nombre)
         s = nombre_stats[key]
@@ -445,14 +476,9 @@ def get_nombres_frecuentes(db: Session, min_apariciones: int = 2) -> list:
         s["apariciones_repr"] += r.cnt
         s["cedula"] = r.cedula
         s["empresas"].update([f"c{r.num_comps}"])
-        # Sumar montos de contratos de las empresas que representa
-        comp_ids = db.query(LegalRepresentative.company_id).filter(
-            LegalRepresentative.nombre == r.nombre
-        ).all()
-        for (comp_id,) in comp_ids:
-            total = db.query(func.sum(Contract.monto_original))\
-                      .filter(Contract.company_id == comp_id).scalar() or 0
-            s["monto_contratos_empresa"] += total
+        s["cargos"].update(cargos_por_nombre.get(r.nombre, ()))
+        for comp_id in companias_por_nombre.get(r.nombre, ()):
+            s["monto_contratos_empresa"] += monto_por_empresa.get(comp_id, 0) or 0
 
     # Construir resultado
     result = []
@@ -472,6 +498,7 @@ def get_nombres_frecuentes(db: Session, min_apariciones: int = 2) -> list:
             "monto_total_involucrado": monto_total,
             "num_instituciones": len(s["instituciones"]),
             "num_empresas": len(s["empresas"]),
+            "cargos": sorted(s["cargos"])[:5],
             "tiene_doble_rol": s["apariciones_firmante"] > 0 and s["apariciones_repr"] > 0,
         })
 

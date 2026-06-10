@@ -180,7 +180,8 @@ def get_company(company_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Empresa no encontrada")
     data = _serialize_company(c)
     data["representantes"] = [
-        {"nombre": r.nombre, "cedula": r.cedula, "cargo": r.cargo}
+        {"id": r.id, "nombre": r.nombre, "cedula": r.cedula, "cargo": r.cargo,
+         "telefono": r.telefono, "email": r.email}
         for r in c.legal_representatives
     ]
     # Contratos recientes
