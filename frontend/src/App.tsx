@@ -9,15 +9,19 @@ import CompanyDetail from './pages/CompanyDetail'
 import Institutions from './pages/Institutions'
 import InstitutionDetail from './pages/InstitutionDetail'
 import Loans from './pages/Loans'
+import LoanDetail from './pages/LoanDetail'
 import GraphView from './pages/GraphView'
 import AlertsPage from './pages/AlertsPage'
 import AIChat from './pages/AIChat'
 import ETLPanel from './pages/ETLPanel'
 import Intelligence from './pages/Intelligence'
 import Cooperatives from './pages/Cooperatives'
+import CooperativeDetail from './pages/CooperativeDetail'
 import Banks from './pages/Banks'
 import PoliticalParties from './pages/PoliticalParties'
 import Legislators from './pages/Legislators'
+import LegislatorDetail from './pages/LegislatorDetail'
+import CommissionDetail from './pages/CommissionDetail'
 import Inhabilitados from './pages/Inhabilitados'
 import Nominas from './pages/Nominas'
 import Seguros from './pages/Seguros'
@@ -37,6 +41,7 @@ export default function App() {
         <Route path="/institutions"              element={<Institutions />} />
         <Route path="/institutions/:id"          element={<InstitutionDetail />} />
         <Route path="/loans"                     element={<Loans />} />
+        <Route path="/loans/:id"                 element={<LoanDetail />} />
         <Route path="/graph"                     element={<GraphView />} />
         <Route path="/alerts"                    element={<AlertsPage />} />
         <Route path="/inhabilitados"              element={<Inhabilitados />} />
@@ -44,9 +49,12 @@ export default function App() {
         <Route path="/etl"                       element={<ETLPanel />} />
         <Route path="/intelligence"              element={<Intelligence />} />
         <Route path="/cooperatives"              element={<Cooperatives />} />
+        <Route path="/cooperatives/:id"          element={<CooperativeDetail />} />
         <Route path="/banks"                     element={<Banks />} />
         <Route path="/parties"                   element={<PoliticalParties />} />
         <Route path="/legislators"               element={<Legislators />} />
+        <Route path="/legislators/:id"           element={<LegislatorDetail />} />
+        <Route path="/comisiones/:id"            element={<CommissionDetail />} />
         <Route path="/nominas"                   element={<Nominas />} />
         <Route path="/seguros"                   element={<Seguros />} />
         <Route path="/pgr"                       element={<PGR />} />

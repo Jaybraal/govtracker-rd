@@ -225,6 +225,14 @@ export const legislatorsApi = {
     api.get('/legislators/con-contratos-relacionados', { params: { limit } }).then(r => r.data),
 }
 
+export const comisionesApi = {
+  list: (params?: Record<string, unknown>) =>
+    api.get('/congreso/comisiones', { params }).then(r => r.data),
+  get: (id: number) => api.get(`/congreso/comisiones/${id}`).then(r => r.data),
+  stats: () => api.get('/congreso/comisiones/stats').then(r => r.data),
+  directiva: () => api.get('/congreso/directiva').then(r => r.data),
+}
+
 export const intelligenceApi = {
   resumen: () => api.get('/intelligence/resumen').then(r => r.data),
   personasInteres: (limit = 50) =>

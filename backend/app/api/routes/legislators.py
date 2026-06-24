@@ -4,6 +4,7 @@ from sqlalchemy import func, desc, or_
 from typing import Optional
 from ...core.database import get_db
 from ...models.legislator import Legislator, LegislatorChamber
+from ...models.commission import CommissionMember, Commission
 
 router = APIRouter(prefix="/legislators", tags=["Legisladores"])
 
@@ -107,6 +108,20 @@ def get_legislator(legislator_id: int, db: Session = Depends(get_db)):
     if not l:
         raise HTTPException(404, "Legislador no encontrado")
     data = _serialize(l)
+
+    membresias = db.query(CommissionMember, Commission).join(
+        Commission, CommissionMember.comision_id == Commission.id
+    ).filter(CommissionMember.legislator_id == l.id).all()
+    if membresias:
+        data["comisiones"] = [
+            {
+                "comision_id": com.id,
+                "nombre": com.nombre,
+                "tipo": com.tipo,
+                "cargo": mem.cargo,
+            }
+            for mem, com in membresias
+        ]
 
     if l.total_contratos_relacionados and l.total_contratos_relacionados > 0:
         from ...models.company import LegalRepresentative

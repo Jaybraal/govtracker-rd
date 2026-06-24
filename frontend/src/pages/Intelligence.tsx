@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Search, Eye, Network, AlertTriangle, User, TrendingUp, Shield } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import { intelligenceApi } from '../services/api'
@@ -414,6 +415,63 @@ export default function Intelligence() {
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* Listas descriptivas */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {redPersona.empresas_detalle?.length > 0 && (
+                  <div className="card">
+                    <h3 className="text-sm font-semibold text-white mb-3">Empresas que representa</h3>
+                    <div className="space-y-2">
+                      {redPersona.empresas_detalle.map((e: any) => (
+                        <Link key={e.id} to={`/companies/${e.id}`}
+                          className="flex items-center justify-between gap-3 p-2 bg-gray-800 rounded-lg hover:bg-gray-700/60 transition-colors">
+                          <div className="min-w-0">
+                            <p className="text-sm text-white truncate">{e.nombre}</p>
+                            <p className="text-xs text-gray-500">{e.cargo || 'Representante legal'} {e.rnc ? `· RNC ${e.rnc}` : ''}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-xs text-emerald-400 font-mono">{fmt(e.total_monto_recibido)}</p>
+                            <p className="text-xs text-gray-500">{e.total_contratos} contratos</p>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {redPersona.contratos_detalle?.length > 0 && (
+                  <div className="card">
+                    <h3 className="text-sm font-semibold text-white mb-3">Contratos firmados (top {redPersona.contratos_detalle.length})</h3>
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {redPersona.contratos_detalle.map((c: any) => (
+                        <Link key={c.id} to={`/contracts/${c.id}`}
+                          className="flex items-center justify-between gap-3 p-2 bg-gray-800 rounded-lg hover:bg-gray-700/60 transition-colors">
+                          <div className="min-w-0">
+                            <p className="text-sm text-white font-mono">{c.numero_contrato || `#${c.id}`}</p>
+                            <p className="text-xs text-gray-500 truncate">{c.descripcion || c.empresa_nombre}</p>
+                            <p className="text-xs text-gray-600">{c.empresa_nombre} · {c.institucion_nombre}</p>
+                          </div>
+                          <p className="text-xs text-emerald-400 font-mono shrink-0">{fmt(c.monto_original)}</p>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {redPersona.personas_relacionadas?.length > 0 && (
+                  <div className="card lg:col-span-2">
+                    <h3 className="text-sm font-semibold text-white mb-3">Personas relacionadas (mismas instituciones)</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {redPersona.personas_relacionadas.map((p: any) => (
+                        <button key={p.nombre} onClick={() => setSelectedPersona(p.nombre)}
+                          className="text-xs bg-purple-900/30 text-purple-300 border border-purple-800/40 px-2 py-1 rounded hover:bg-purple-900/50 transition-colors">
+                          {p.nombre} <span className="text-purple-500">({p.contratos_compartidos} contratos compartidos)</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

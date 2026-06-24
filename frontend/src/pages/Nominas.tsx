@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Search, Users, TrendingUp, Building2, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, Users, TrendingUp, Building2, AlertTriangle, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import { useApi } from '../hooks/useApi'
 import axios from 'axios'
@@ -42,6 +42,15 @@ function useInstituciones(anio: number | '') {
   }).then(r => r.data), [anio])
 }
 
+function useDobleCobroDetalle(nombre: string | null) {
+  return useApi(
+    () => nombre
+      ? api.get('/nominas/doble-cobro/detalle', { params: { nombre } }).then(r => r.data)
+      : Promise.resolve(null),
+    [nombre],
+  )
+}
+
 // ── Paginador ────────────────────────────────────────────────
 function Pager({ page, total, size, onChange }: { page: number; total: number; size: number; onChange: (p: number) => void }) {
   const pages = Math.ceil(total / size)
@@ -64,11 +73,65 @@ function Pager({ page, total, size, onChange }: { page: number; total: number; s
   )
 }
 
+const MESES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+
+// ── Modal: Detalle de Doble Cobro ─────────────────────────────
+function DobleCobroModal({ nombre, nombreOriginal, onClose }: { nombre: string; nombreOriginal: string; onClose: () => void }) {
+  const { data, loading } = useDobleCobroDetalle(nombre)
+
+  const grupos: Record<string, { anio: number; mes: number; items: any[] }> = {}
+  for (const r of data?.registros ?? []) {
+    const mes = Number(r.mes)
+    const key = `${r.anio}-${mes}`
+    if (!grupos[key]) grupos[key] = { anio: r.anio, mes, items: [] }
+    grupos[key].items.push(r)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="card max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-sm font-semibold text-white">{nombreOriginal}</h3>
+            <p className="text-xs text-gray-500 mt-0.5">Desglose mes a mes por institución</p>
+          </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-white"><X size={18} /></button>
+        </div>
+        {loading ? (
+          <div className="p-8 text-center text-gray-500">Cargando...</div>
+        ) : !data?.registros?.length ? (
+          <div className="p-8 text-center text-gray-500">Sin detalle disponible</div>
+        ) : (
+          <div className="space-y-3">
+            {Object.values(grupos).map(g => (
+              <div key={`${g.anio}-${g.mes}`} className="bg-gray-800/50 rounded-lg p-3">
+                <p className="text-xs text-gray-400 font-medium mb-2">{MESES[g.mes] ?? g.mes} {g.anio}</p>
+                <div className="space-y-1.5">
+                  {g.items.map((it: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between gap-3 text-sm">
+                      <div className="min-w-0">
+                        <p className="text-white truncate">{it.institucion}</p>
+                        {it.funcion && <p className="text-xs text-gray-500 truncate">{it.funcion}</p>}
+                      </div>
+                      <span className="font-mono text-green-400 shrink-0">{fmtRD(it.salario)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Tab: Doble Cobro ─────────────────────────────────────────
 function TabDoble({ anios }: { anios: number[] }) {
   const [anio, setAnio] = useState<number | ''>(anios[0] ?? '')
   const [confianza, setConfianza] = useState('')
   const [page, setPage] = useState(1)
+  const [selected, setSelected] = useState<{ nombre: string; nombreOriginal: string } | null>(null)
   const { data, loading } = useDoble(anio, confianza, page)
 
   return (
@@ -112,7 +175,8 @@ function TabDoble({ anios }: { anios: number[] }) {
               </thead>
               <tbody>
                 {data?.results?.map((r: any, i: number) => (
-                  <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                  <tr key={i} onClick={() => setSelected({ nombre: r.nombre, nombreOriginal: r.nombre_original })}
+                    className="border-b border-gray-800/50 hover:bg-gray-800/30 cursor-pointer">
                     <td className="px-4 py-3">
                       <span className={`text-xs px-2 py-0.5 rounded font-medium ${CONFIDENCE_COLORS[r.confianza] ?? ''}`}>
                         {r.confianza}
@@ -146,6 +210,14 @@ function TabDoble({ anios }: { anios: number[] }) {
           <Pager page={page} total={data?.total ?? 0} size={50} onChange={setPage} />
         </div>
       </div>
+
+      {selected && (
+        <DobleCobroModal
+          nombre={selected.nombre}
+          nombreOriginal={selected.nombreOriginal}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </div>
   )
 }

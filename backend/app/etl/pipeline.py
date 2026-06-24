@@ -14,6 +14,7 @@ from .scrapers.combustibles_scraper import run_combustibles_scraper
 from .scrapers.seguros_senasa_scraper import run_seguros_senasa_scraper
 from .scrapers.seguridad_scraper import run_seguridad_scraper
 from .scrapers.camara_diputados_scraper import run_camara_diputados_scraper
+from .scrapers.congreso_comisiones_scraper import run_congreso_comisiones_scraper
 
 
 class ETLPipeline:
@@ -23,7 +24,7 @@ class ETLPipeline:
         sources = sources or [
             "hacienda", "credito_publico", "idecoop", "sib", "jce",
             "combustibles", "seguros_senasa", "seguridad",
-            "camara_diputados", "dgcp",
+            "camara_diputados", "congreso_comisiones", "dgcp",
         ]
         logger.info(f"Pipeline ETL iniciado: {sources}")
         results = {}
@@ -108,6 +109,15 @@ class ETLPipeline:
             except Exception as e:
                 logger.error(f"Cámara de Diputados pipeline error: {e}")
                 results["camara_diputados"] = {"status": "error", "error": str(e)}
+
+        # 9b. Comisiones del Congreso (mesa directiva, comisiones permanentes — SIL, ETL en vivo)
+        if "congreso_comisiones" in sources:
+            try:
+                count = await run_congreso_comisiones_scraper()
+                results["congreso_comisiones"] = {"status": "ok", "records": count}
+            except Exception as e:
+                logger.error(f"Comisiones del Congreso pipeline error: {e}")
+                results["congreso_comisiones"] = {"status": "error", "error": str(e)}
 
         # 10. DGCP (contratos) — más pesado, al final
         if "dgcp" in sources:

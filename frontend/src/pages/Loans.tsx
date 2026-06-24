@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { Banknote } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import StatCard from '../components/StatCard'
@@ -13,6 +13,7 @@ const fmt = (n: number, currency = 'USD') => {
 }
 
 export default function Loans() {
+  const navigate = useNavigate()
   const [page, setPage] = useState(1)
   const [acreedor, setAcreedor] = useState('')
 
@@ -88,7 +89,7 @@ export default function Loans() {
             {loading ? (
               <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">Cargando...</td></tr>
             ) : data?.items.map(l => (
-              <tr key={l.id} className="table-row">
+              <tr key={l.id} onClick={() => navigate(`/loans/${l.id}`)} className="table-row cursor-pointer">
                 <td className="px-4 py-3">
                   <p className="text-white font-medium text-xs">{l.acreedor}</p>
                   <p className="text-xs text-gray-500">{l.tipo_acreedor}</p>

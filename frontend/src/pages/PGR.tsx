@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Search, Shield, AlertTriangle, FileText, ChevronLeft, ChevronRight, ExternalLink, Play } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import { useApi } from '../hooks/useApi'
@@ -73,11 +73,12 @@ function TipoBadge({ tipo }: { tipo: string }) {
 }
 
 // ── Tab: Comunicados ──────────────────────────────────────────
-function TabComunicados({ tiposDisponibles }: { tiposDisponibles: string[] }) {
+function TabComunicados({ tiposDisponibles, operacion, setOperacion }: { tiposDisponibles: string[]; operacion: string; setOperacion: (v: string) => void }) {
   const [tipo, setTipo] = useState('')
-  const [operacion, setOperacion] = useState('')
   const [page, setPage] = useState(1)
   const { data, loading } = useComunicados(tipo, operacion, page)
+
+  useEffect(() => { setPage(1) }, [operacion])
 
   return (
     <div className="space-y-4">
@@ -86,12 +87,23 @@ function TabComunicados({ tiposDisponibles }: { tiposDisponibles: string[] }) {
           <option value="">Todos los tipos</option>
           {tiposDisponibles.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
-        <input
-          className="input flex-1 min-w-48"
-          placeholder="Filtrar por operación (ej: Cobra)"
-          value={operacion}
-          onChange={e => { setOperacion(e.target.value); setPage(1) }}
-        />
+        <div className="relative flex-1 min-w-48">
+          <input
+            className="input w-full"
+            placeholder="Filtrar por operación (ej: Cobra)"
+            value={operacion}
+            onChange={e => { setOperacion(e.target.value); setPage(1) }}
+          />
+          {operacion && (
+            <button
+              onClick={() => setOperacion('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-xs"
+              title="Quitar filtro"
+            >
+              ✕
+            </button>
+          )}
+        </div>
         {data && <span className="text-sm text-gray-500">{data.total.toLocaleString()} comunicados</span>}
       </div>
 
@@ -155,7 +167,7 @@ function TabComunicados({ tiposDisponibles }: { tiposDisponibles: string[] }) {
 }
 
 // ── Tab: Operaciones ──────────────────────────────────────────
-function TabOperaciones() {
+function TabOperaciones({ onSelect }: { onSelect: (operacion: string) => void }) {
   const { data, loading } = useOperaciones()
   return (
     <div className="space-y-4">
@@ -180,7 +192,8 @@ function TabOperaciones() {
               </thead>
               <tbody>
                 {data.results.map((r: any, i: number) => (
-                  <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                  <tr key={i} onClick={() => onSelect(r.operacion)}
+                    className="border-b border-gray-800/50 hover:bg-gray-800/30 cursor-pointer">
                     <td className="px-4 py-3 font-medium text-white">
                       <span className="bg-red-900/30 text-red-300 border border-red-800/40 px-2 py-0.5 rounded text-xs">
                         {r.operacion}
@@ -293,6 +306,7 @@ const TABS: { id: Tab; label: string; icon: typeof Shield }[] = [
 
 export default function PGR() {
   const [tab, setTab] = useState<Tab>('comunicados')
+  const [operacion, setOperacion] = useState('')
   const { data: stats } = useStats()
   const tiposDisponibles = stats?.por_tipo ? Object.keys(stats.por_tipo) : []
   const dbVacia = stats === null || stats?.total_comunicados === 0
@@ -353,7 +367,7 @@ export default function PGR() {
           {stats.operaciones_detectadas.slice(0, 10).map((op: any) => (
             <button
               key={op.operacion}
-              onClick={() => { setTab('operaciones') }}
+              onClick={() => { setOperacion(op.operacion); setTab('comunicados') }}
               className="text-xs bg-red-900/30 text-red-300 border border-red-800/40 px-2 py-0.5 rounded hover:bg-red-900/50 transition-colors"
             >
               {op.operacion} <span className="text-red-500">({op.cantidad})</span>
@@ -380,8 +394,8 @@ export default function PGR() {
         ))}
       </div>
 
-      {tab === 'comunicados'  && <TabComunicados tiposDisponibles={tiposDisponibles} />}
-      {tab === 'operaciones'  && <TabOperaciones />}
+      {tab === 'comunicados'  && <TabComunicados tiposDisponibles={tiposDisponibles} operacion={operacion} setOperacion={setOperacion} />}
+      {tab === 'operaciones'  && <TabOperaciones onSelect={op => { setOperacion(op); setTab('comunicados') }} />}
       {tab === 'buscar'       && <TabBuscar />}
     </div>
   )

@@ -117,6 +117,14 @@ async def seed_camara_diputados():
     return {"status": "ok", "registros": count}
 
 
+@router.post("/seed/congreso-comisiones")
+async def seed_congreso_comisiones():
+    """Sincroniza comisiones del Congreso (mesa directiva, permanentes, especiales) desde el SIL en vivo."""
+    from ...etl.scrapers.congreso_comisiones_scraper import run_congreso_comisiones_scraper
+    count = await run_congreso_comisiones_scraper()
+    return {"status": "ok", "registros": count}
+
+
 @router.get("/dgii/rnc/{rnc}")
 async def consultar_rnc(rnc: str):
     """Consulta datos de un RNC directamente en la DGII (tiempo real)."""

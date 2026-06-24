@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Search, Users, TrendingUp, Building2, MapPin } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -35,6 +35,7 @@ const PIE_COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4',
 const TIPOS = Object.keys(TIPO_LABEL)
 
 export default function Cooperatives() {
+  const navigate = useNavigate()
   const [page, setPage]       = useState(1)
   const [search, setSearch]   = useState('')
   const [tipo, setTipo]       = useState('')
@@ -138,7 +139,7 @@ export default function Cooperatives() {
               </thead>
               <tbody>
                 {conContr.map((c: any) => (
-                  <tr key={c.id} className="table-row">
+                  <tr key={c.id} onClick={() => navigate(`/cooperatives/${c.id}`)} className="table-row cursor-pointer">
                     <td className="py-2 px-3">
                       <p className="text-white font-medium">{c.siglas || c.nombre.slice(0, 30)}</p>
                       <p className="text-gray-500 text-xs truncate max-w-48">{c.provincia}</p>
@@ -209,7 +210,7 @@ export default function Cooperatives() {
               {loading ? (
                 <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-500">Cargando...</td></tr>
               ) : data?.items.map((c: any) => (
-                <tr key={c.id} className={`table-row ${c.total_contratos_estado > 0 ? 'bg-yellow-950/5' : ''}`}>
+                <tr key={c.id} onClick={() => navigate(`/cooperatives/${c.id}`)} className={`table-row cursor-pointer ${c.total_contratos_estado > 0 ? 'bg-yellow-950/5' : ''}`}>
                   <td className="px-4 py-3">
                     <p className="text-white font-medium text-sm">{c.siglas || ''}</p>
                     <p className="text-xs text-gray-500 max-w-64 truncate">{c.nombre}</p>
@@ -247,7 +248,7 @@ export default function Cooperatives() {
           {loading ? (
             <div className="col-span-3 text-center text-gray-500 py-8">Cargando...</div>
           ) : data?.items.map((c: any) => (
-            <div key={c.id} className={`card hover:border-gov-700 transition-colors ${c.total_contratos_estado > 0 ? 'border-yellow-900/50' : ''}`}>
+            <div key={c.id} onClick={() => navigate(`/cooperatives/${c.id}`)} className={`card hover:border-gov-700 transition-colors cursor-pointer ${c.total_contratos_estado > 0 ? 'border-yellow-900/50' : ''}`}>
               <div className="flex items-start justify-between mb-2">
                 <div className="w-10 h-10 bg-gov-700/20 rounded-lg flex items-center justify-center text-gov-400 font-bold text-xs text-center leading-tight p-1">
                   {(c.siglas || c.nombre.slice(0,4)).slice(0,6)}

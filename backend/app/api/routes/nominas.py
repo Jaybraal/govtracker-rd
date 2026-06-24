@@ -108,6 +108,31 @@ def doble_cobro(
         conn.close()
 
 
+@router.get("/doble-cobro/detalle")
+def doble_cobro_detalle(nombre: str = Query(..., min_length=3)):
+    """Desglose mes a mes / institución por institución para una persona detectada en doble cobro."""
+    conn = get_conn()
+    try:
+        nombre_norm = nombre.upper().strip()
+        rows = conn.execute("""
+            SELECT anio, mes, institucion, funcion, salario, nombre_raw
+            FROM empleados
+            WHERE nombre = ?
+              AND anio BETWEEN 2010 AND 2026
+              AND funcion NOT LIKE '%MONTO_ANOMALO%'
+            ORDER BY anio, mes, institucion
+        """, (nombre_norm,)).fetchall()
+        if not rows:
+            raise HTTPException(status_code=404, detail="Sin registros para esta persona")
+        return {
+            "nombre": nombre_norm,
+            "nombre_original": rows[0]["nombre_raw"],
+            "registros": [dict(r) for r in rows],
+        }
+    finally:
+        conn.close()
+
+
 @router.get("/top-salarios")
 def top_salarios(
     anio: Optional[int] = None,

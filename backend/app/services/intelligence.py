@@ -350,8 +350,9 @@ def get_red_personas(db: Session, nombre: str) -> dict:
     # Contratos firmados
     contratos = db.query(Contract).filter(
         func.lower(Contract.oficial_firmante).contains(nombre_lower)
-    ).limit(30).all()
+    ).order_by(desc(Contract.monto_original)).limit(30).all()
 
+    contratos_detalle = []
     for c in contratos:
         inst = db.query(Institution).get(c.institution_id)
         comp = db.query(Company).get(c.company_id)
@@ -363,21 +364,41 @@ def get_red_personas(db: Session, nombre: str) -> dict:
             comp_id = f"comp_{comp.id}"
             nodes[comp_id] = {"id": comp_id, "label": comp.nombre[:25], "group": "company", "value": c.monto_original / 1e6}
             edges.append({"from": central_id, "to": comp_id, "title": f"RD${c.monto_original/1e6:.1f}M"})
+        contratos_detalle.append({
+            "id": c.id,
+            "numero_contrato": c.numero_contrato,
+            "descripcion": c.descripcion or c.objeto,
+            "monto_original": c.monto_original,
+            "empresa_id": comp.id if comp else None,
+            "empresa_nombre": comp.nombre if comp else None,
+            "institucion_id": inst.id if inst else None,
+            "institucion_nombre": inst.nombre if inst else None,
+        })
 
     # Como representante legal
     reps = db.query(LegalRepresentative).filter(
         func.lower(LegalRepresentative.nombre).contains(nombre_lower)
     ).all()
 
+    empresas_detalle = []
     for rep in reps:
         comp = db.query(Company).get(rep.company_id)
         if comp:
             comp_id = f"comp_{comp.id}"
             nodes[comp_id] = {"id": comp_id, "label": comp.nombre[:25], "group": "company_repr", "value": 20}
             edges.append({"from": central_id, "to": comp_id, "title": "Representante Legal", "dashes": True})
+            empresas_detalle.append({
+                "id": comp.id,
+                "nombre": comp.nombre,
+                "cargo": rep.cargo,
+                "rnc": comp.rnc,
+                "total_contratos": comp.total_contratos,
+                "total_monto_recibido": comp.total_monto_recibido,
+            })
 
     # Otros firmantes en los mismos contratos/instituciones
     inst_ids = {c.institution_id for c in contratos}
+    personas_relacionadas = []
     if inst_ids:
         otros_firmantes = db.query(
             Contract.oficial_firmante,
@@ -394,6 +415,7 @@ def get_red_personas(db: Session, nombre: str) -> dict:
             oid = f"persona_{_normalize_name(r.oficial_firmante)[:20]}"
             nodes[oid] = {"id": oid, "label": r.oficial_firmante[:25], "group": "persona_relacionada", "value": 20}
             edges.append({"from": central_id, "to": oid, "title": f"Comparten institución ({r.cnt} contratos)", "dashes": True})
+            personas_relacionadas.append({"nombre": r.oficial_firmante, "contratos_compartidos": r.cnt})
 
     return {
         "nombre": nombre,
@@ -401,6 +423,9 @@ def get_red_personas(db: Session, nombre: str) -> dict:
         "edges": edges,
         "contratos_encontrados": len(contratos),
         "empresas_representa": len(reps),
+        "contratos_detalle": contratos_detalle,
+        "empresas_detalle": empresas_detalle,
+        "personas_relacionadas": personas_relacionadas,
     }
 
 
