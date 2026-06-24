@@ -5,7 +5,8 @@ from typing import Optional
 from ...core.database import get_db
 from ...models.alert import Alert, AlertSeverity, AlertType
 from ...models.contract import Contract
-from ...models.company import Company, SupplierDisqualification
+from ...models.company import Company, SupplierDisqualification, LegalRepresentative
+from ...models.legislator import Legislator
 from ...core.config import settings
 
 router = APIRouter(prefix="/alerts", tags=["Alertas"])
@@ -255,6 +256,34 @@ def _run_scan(db: Session) -> int:
                     "oficio": d.oficio_inhabilitacion,
                     "fuente": d.fuente, "url_fuente": d.url_fuente,
                 },
+            ))
+            count += 1
+
+    # 8. Legisladores en ejercicio cuyo nombre coincide con el de un
+    #    representante legal de una empresa contratista del Estado. Es una
+    #    coincidencia POR NOMBRE (el SIL no publica cédula del legislador),
+    #    no una identidad confirmada — requiere verificación manual antes de
+    #    imputar conflicto de interés a la persona.
+    for leg in db.query(Legislator).filter(Legislator.total_contratos_relacionados > 0).all():
+        if not _alert_exists(db, AlertType.POSIBLE_CONFLICTO, leg.id):
+            reps = db.query(LegalRepresentative).filter(
+                func.upper(LegalRepresentative.nombre) == func.upper(leg.nombre_completo)
+            ).all()
+            empresas = ", ".join(sorted({r.company.nombre for r in reps if r.company})[:3])
+            db.add(Alert(
+                tipo=AlertType.POSIBLE_CONFLICTO,
+                severidad=AlertSeverity.MEDIA,
+                titulo=f"Legislador con nombre coincidente a representante legal de contratista",
+                descripcion=(
+                    f"El nombre «{leg.nombre_completo}» ({leg.funcion or 'legislador'}, {leg.partido_siglas or '—'}) "
+                    f"coincide con el de un representante legal en {empresas or 'empresa(s) contratista(s)'}, "
+                    f"con {leg.total_contratos_relacionados} contrato(s) del Estado por "
+                    f"{_fmt(leg.total_monto_relacionado)} — coincidencia por nombre, sin cédula que confirme "
+                    f"identidad; requiere verificación manual antes de concluir conflicto de interés"
+                ),
+                entidad_tipo="legislador", entidad_id=leg.id,
+                monto_involucrado=leg.total_monto_relacionado,
+                datos_extra={"camara": leg.camara.value if leg.camara else None, "verificado": False},
             ))
             count += 1
 

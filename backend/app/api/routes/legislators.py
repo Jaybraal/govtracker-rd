@@ -127,7 +127,7 @@ def get_legislator(legislator_id: int, db: Session = Depends(get_db)):
         from ...models.company import LegalRepresentative
         from ...models.contract import Contract
         reps = db.query(LegalRepresentative).filter(
-            func.upper(LegalRepresentative.nombre) == l.nombre_completo.upper()
+            func.upper(LegalRepresentative.nombre) == func.upper(l.nombre_completo)
         ).all()
         company_ids = {r.company_id for r in reps}
         if company_ids:

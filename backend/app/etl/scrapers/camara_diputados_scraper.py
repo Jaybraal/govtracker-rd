@@ -180,8 +180,11 @@ class CamaraDiputadosScraper:
         """
         legisladores = self.db.query(Legislator).all()
         for leg in legisladores:
+            # func.upper() en ambos lados — SQLite upper() es ASCII-only y no
+            # uppercasea tildes minúsculas; mezclar con el .upper() de Python
+            # (sí Unicode-aware) producía falsos negativos en nombres con tilde.
             reps = self.db.query(LegalRepresentative).filter(
-                func.upper(LegalRepresentative.nombre) == leg.nombre_completo.upper()
+                func.upper(LegalRepresentative.nombre) == func.upper(leg.nombre_completo)
             ).all()
             if not reps:
                 leg.total_contratos_relacionados = 0

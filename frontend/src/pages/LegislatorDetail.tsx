@@ -107,7 +107,9 @@ export default function LegislatorDetail() {
         <div className="card border-yellow-900/40">
           <h3 className="text-sm font-semibold text-white mb-3">Contratos Relacionados ({l.contratos_relacionados.length})</h3>
           <p className="text-xs text-gray-500 mb-3">
-            Contratos del Estado vinculados a empresas donde {l.nombre_completo} figura como representante legal.
+            Contratos del Estado de empresas con un representante legal cuyo nombre coincide con «{l.nombre_completo}».
+            Es una coincidencia por nombre — el SIL no publica cédula del legislador — y requiere verificación manual
+            de identidad antes de concluir que se trata de la misma persona.
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
