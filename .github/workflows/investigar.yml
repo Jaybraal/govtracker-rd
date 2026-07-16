@@ -1,0 +1,53 @@
+name: Investigador diario
+
+on:
+  schedule:
+    - cron: "0 10 * * *"  # 10:00 UTC = 06:00 AST
+  workflow_dispatch: {}
+
+jobs:
+  investigar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Restaurar BD desde caché
+        id: cache-db
+        uses: actions/cache@v4
+        with:
+          path: backend/govtracker_test.db
+          key: govtracker-db-${{ github.run_id }}
+          restore-keys: |
+            govtracker-db-
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Preparar .env mínimo para sqlite
+        run: |
+          echo "DATABASE_URL=sqlite:///./govtracker_test.db" >> .env
+          echo "DATABASE_URL_ASYNC=sqlite+aiosqlite:///./govtracker_test.db" >> .env
+
+      - name: Correr investigador
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+        run: python -m scripts.investigar
+
+      - name: Guardar BD en caché
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: backend/govtracker_test.db
+          key: govtracker-db-${{ github.run_id }}
