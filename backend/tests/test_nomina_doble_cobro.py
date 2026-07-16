@@ -55,3 +55,10 @@ def test_es_seguro_llamarlo_dos_veces_no_duplica(db_session, tmp_path):
     assert len(primera) == 1
     assert len(segunda) == 0
     assert db_session.query(Alert).filter(Alert.tipo == AlertType.NOMINA_DOBLE_COBRO).count() == 1
+
+
+def test_no_falla_si_nominas_db_esta_corrupto(db_session, tmp_path):
+    ruta_corrupta = tmp_path / "corrupto.db"
+    ruta_corrupta.write_bytes(b"not a real sqlite file")
+
+    assert _scan_nomina_doble_cobro(db_session, nominas_db_path=ruta_corrupta) == []

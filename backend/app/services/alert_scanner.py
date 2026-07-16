@@ -20,6 +20,8 @@ import re
 import hashlib
 from pathlib import Path
 
+from loguru import logger
+
 NOMINAS_DB_DEFAULT = Path(__file__).parent.parent.parent.parent / "data" / "nominas.db"
 
 
@@ -45,28 +47,34 @@ def _scan_nomina_doble_cobro(db: Session, nominas_db_path: Path = NOMINAS_DB_DEF
     if not Path(nominas_db_path).exists():
         return []
 
-    conn = sqlite3.connect(str(nominas_db_path))
-    conn.row_factory = sqlite3.Row
     try:
-        rows = conn.execute("""
-            SELECT nombre, MIN(nombre_raw) AS nombre_raw,
-                   COUNT(*) AS meses_afectados,
-                   GROUP_CONCAT(DISTINCT instituciones_mes) AS instituciones,
-                   ROUND(SUM(total_mes), 0) AS total_cobrado
-            FROM (
-                SELECT nombre, MIN(nombre_raw) AS nombre_raw, anio, mes,
-                       COUNT(DISTINCT institucion) AS num_inst,
-                       GROUP_CONCAT(DISTINCT institucion) AS instituciones_mes,
-                       SUM(salario) AS total_mes
-                FROM empleados
-                WHERE anio BETWEEN 2010 AND 2026
-                GROUP BY nombre, anio, mes
-                HAVING num_inst > 1 AND nombre != '' AND LENGTH(nombre) > 22
-            ) sub
-            GROUP BY nombre
-        """).fetchall()
-    finally:
-        conn.close()
+        conn = sqlite3.connect(str(nominas_db_path))
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute("""
+                SELECT nombre, MIN(nombre_raw) AS nombre_raw,
+                       COUNT(*) AS meses_afectados,
+                       GROUP_CONCAT(DISTINCT instituciones_mes) AS instituciones,
+                       ROUND(SUM(total_mes), 0) AS total_cobrado
+                FROM (
+                    SELECT nombre, MIN(nombre_raw) AS nombre_raw, anio, mes,
+                           COUNT(DISTINCT institucion) AS num_inst,
+                           GROUP_CONCAT(DISTINCT institucion) AS instituciones_mes,
+                           SUM(salario) AS total_mes
+                    FROM empleados
+                    WHERE anio BETWEEN 2010 AND 2026
+                    GROUP BY nombre, anio, mes
+                    HAVING num_inst > 1 AND nombre != '' AND LENGTH(nombre) > 22
+                ) sub
+                GROUP BY nombre
+            """).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error as e:
+        logger.warning(
+            f"nominas.db existe pero no se pudo leer ({e}) — se omite esta regla en esta corrida"
+        )
+        return []
 
     nuevas: list[Alert] = []
     for r in rows:
