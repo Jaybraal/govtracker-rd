@@ -14,6 +14,89 @@ from ..models.company import Company, SupplierDisqualification, LegalRepresentat
 from ..models.legislator import Legislator
 from ..core.config import settings
 
+import sqlite3
+import unicodedata
+import re
+import hashlib
+from pathlib import Path
+
+NOMINAS_DB_DEFAULT = Path(__file__).parent.parent.parent.parent / "data" / "nominas.db"
+
+
+def _norm_nombre(s: str) -> str:
+    n = (s or "").upper().strip()
+    n = unicodedata.normalize("NFKD", n).encode("ascii", "ignore").decode()
+    n = re.sub(r"\s+", " ", n)
+    n = re.sub(r"[^A-Z\s]", "", n)
+    return n.strip()
+
+
+def _scan_nomina_doble_cobro(db: Session, nominas_db_path: Path = NOMINAS_DB_DEFAULT) -> list[Alert]:
+    """Misma persona cobrando en >1 institución el mismo mes. Reutiliza el
+    heurístico de confianza ya validado en producción por
+    `api/routes/nominas.py::doble_cobro` (nombre normalizado más largo =
+    más específico = menos probable que sea coincidencia de homónimos) —
+    pero antes esta lógica nunca alimentaba la tabla Alert. Solo genera
+    alerta para confianza ALTA: es una regla nueva, hay que estrenarla con
+    el listón más exigente, no con el más ruidoso.
+
+    Tolera que `nominas.db` no exista (2.2GB, no vive en CI) — devuelve
+    lista vacía en vez de romper toda la corrida."""
+    if not Path(nominas_db_path).exists():
+        return []
+
+    conn = sqlite3.connect(str(nominas_db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute("""
+            SELECT nombre, MIN(nombre_raw) AS nombre_raw,
+                   COUNT(*) AS meses_afectados,
+                   GROUP_CONCAT(DISTINCT instituciones_mes) AS instituciones,
+                   ROUND(SUM(total_mes), 0) AS total_cobrado
+            FROM (
+                SELECT nombre, MIN(nombre_raw) AS nombre_raw, anio, mes,
+                       COUNT(DISTINCT institucion) AS num_inst,
+                       GROUP_CONCAT(DISTINCT institucion) AS instituciones_mes,
+                       SUM(salario) AS total_mes
+                FROM empleados
+                WHERE anio BETWEEN 2010 AND 2026
+                GROUP BY nombre, anio, mes
+                HAVING num_inst > 1 AND nombre != '' AND LENGTH(nombre) > 22
+            ) sub
+            GROUP BY nombre
+        """).fetchall()
+    finally:
+        conn.close()
+
+    nuevas: list[Alert] = []
+    for r in rows:
+        # hash() de Python está aleatorizado por proceso (PYTHONHASHSEED no
+        # fijado en este repo) — el cron corre en un proceso nuevo cada día,
+        # así que hash() daría una clave DISTINTA para la misma persona cada
+        # vez y _alert_exists nunca encontraría la alerta de la corrida
+        # anterior, duplicándola para siempre. Se usa un hash estable
+        # (sha256) para que la misma persona produzca siempre la misma clave.
+        key = int(hashlib.sha256(r["nombre"].encode()).hexdigest()[:15], 16) % 2_000_000_000
+        if _alert_exists(db, AlertType.NOMINA_DOBLE_COBRO, key):
+            continue
+        nuevas.append(_add(db, Alert(
+            tipo=AlertType.NOMINA_DOBLE_COBRO,
+            severidad=AlertSeverity.ALTA,
+            titulo=f"Posible doble cobro en nómina: {r['nombre_raw']}",
+            descripcion=(
+                f"«{r['nombre_raw']}» aparece cobrando en {r['instituciones']} durante "
+                f"{r['meses_afectados']} mes(es), por un total de {_fmt(r['total_cobrado'] or 0)} — "
+                f"coincidencia por nombre, sin cédula que confirme identidad; requiere verificación "
+                f"manual antes de concluir doble cobro indebido"
+            ),
+            entidad_tipo="persona_nomina", entidad_id=key,
+            entidad_nombre=r["nombre_raw"],
+            monto_involucrado=r["total_cobrado"],
+            datos_extra={"instituciones": r["instituciones"], "verificado": False},
+        )))
+    db.commit()
+    return nuevas
+
 
 def run_alert_scan(db: Session) -> list[Alert]:
     """Ejecuta todas las reglas de detección sobre los datos actuales y
@@ -207,6 +290,8 @@ def run_alert_scan(db: Session) -> list[Alert]:
                 monto_involucrado=leg.total_monto_relacionado,
                 datos_extra={"camara": leg.camara.value if leg.camara else None, "verificado": False},
             )))
+
+    nuevas.extend(_scan_nomina_doble_cobro(db))
 
     db.commit()
     return nuevas

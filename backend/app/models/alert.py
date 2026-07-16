@@ -25,6 +25,7 @@ class AlertType(str, enum.Enum):
     ANOMALIA_MONTO = "anomalia_monto"
     EMPRESA_CAUTIVA = "empresa_cautiva"
     PROVEEDOR_INHABILITADO = "proveedor_inhabilitado"
+    NOMINA_DOBLE_COBRO = "nomina_doble_cobro"
 
 
 class Alert(Base):
