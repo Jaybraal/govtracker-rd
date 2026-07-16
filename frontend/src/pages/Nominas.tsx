@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Search, Users, TrendingUp, Building2, AlertTriangle, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { Search, Users, TrendingUp, Building2, AlertTriangle, ChevronLeft, ChevronRight, X, ShieldAlert } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import { useApi } from '../hooks/useApi'
 import axios from 'axios'
@@ -17,7 +17,7 @@ const CONFIDENCE_COLORS: Record<string, string> = {
   BAJA:  'bg-gray-800 text-gray-400 border border-gray-700/40',
 }
 
-type Tab = 'doble' | 'salarios' | 'instituciones' | 'buscar'
+type Tab = 'doble' | 'salarios' | 'instituciones' | 'buscar' | 'conflicto'
 
 // ── Hooks de datos ───────────────────────────────────────────
 function useNominasStats() {
@@ -49,6 +49,12 @@ function useDobleCobroDetalle(nombre: string | null) {
       : Promise.resolve(null),
     [nombre],
   )
+}
+
+function useConflictoRepresentantes(confianza: string, page: number) {
+  return useApi(() => api.get('/nominas/conflicto-representantes', {
+    params: { ...(confianza && { confianza }), page, size: 50 },
+  }).then(r => r.data), [confianza, page])
 }
 
 // ── Paginador ────────────────────────────────────────────────
@@ -352,6 +358,7 @@ function TabBuscar({ anios }: { anios: number[] }) {
   const [anio, setAnio] = useState<number | ''>('')
   const [page, setPage] = useState(1)
   const [searchTerm, setSearchTerm] = useState('')
+  const [selected, setSelected] = useState<{ nombre: string; nombreOriginal: string } | null>(null)
 
   const { data, loading } = useApi(
     () => searchTerm.length >= 3
@@ -406,7 +413,8 @@ function TabBuscar({ anios }: { anios: number[] }) {
                 </thead>
                 <tbody>
                   {data.results.map((r: any, i: number) => (
-                    <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                    <tr key={i} onClick={() => setSelected({ nombre: r.nombre, nombreOriginal: r.nombre_raw })}
+                      className="border-b border-gray-800/50 hover:bg-gray-800/30 cursor-pointer">
                       <td className="px-4 py-3 font-medium text-white max-w-[180px] truncate" title={r.nombre_raw}>
                         {r.nombre_raw}
                       </td>
@@ -433,6 +441,161 @@ function TabBuscar({ anios }: { anios: number[] }) {
           </div>
         </div>
       )}
+
+      {selected && (
+        <DobleCobroModal
+          nombre={selected.nombre}
+          nombreOriginal={selected.nombreOriginal}
+          onClose={() => setSelected(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Modal: Detalle de Conflicto de Interés ────────────────────
+function ConflictoDetalleModal({ match, onClose }: { match: any; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="card max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between mb-3 gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-white">{match.nombre}</h3>
+            <p className="text-xs text-gray-500 mt-0.5">{match.institucion_empleo} · {match.cargo_empleo}</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className={`text-xs px-2 py-0.5 rounded font-medium ${CONFIDENCE_COLORS[match.confianza] ?? ''}`}>
+              {match.confianza}
+            </span>
+            <button onClick={onClose} className="text-gray-500 hover:text-white"><X size={18} /></button>
+          </div>
+        </div>
+        <p className="text-xs text-gray-500 mb-2">
+          Empresa(s) representada(s) — {match.representaciones.length}
+        </p>
+        <div className="space-y-2">
+          {match.representaciones.map((r: any, i: number) => (
+            <div key={i} className="bg-gray-800/50 rounded-lg p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-white text-sm font-medium">{r.empresa}</p>
+                {r.company_id && (
+                  <a href={`/companies/${r.company_id}`} className="text-xs text-gov-400 hover:underline shrink-0">
+                    Ver empresa →
+                  </a>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 mt-2 text-xs text-gray-400">
+                <span>RNC: {r.rnc || 'sin dato'}</span>
+                <span>Cargo registrado: {r.cargo || 'sin dato'}</span>
+                <span>Cédula: {r.cedula || 'sin dato'}</span>
+                <span>Contratos: {r.total_contratos ?? 0}</span>
+              </div>
+              <p className="text-orange-400 font-mono text-sm mt-1.5">{fmtRD(r.total_monto_recibido || 0)}</p>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-gray-600 mt-3">
+          Coincidencia por nombre normalizado, sin cédula de por medio en ninguna de las dos fuentes — requiere verificación manual.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ── Tab: Conflicto de Interés (nómina vs. representantes legales) ────
+function TabConflicto() {
+  const [confianza, setConfianza] = useState('')
+  const [page, setPage] = useState(1)
+  const [selected, setSelected] = useState<any>(null)
+  const { data, loading } = useConflictoRepresentantes(confianza, page)
+
+  return (
+    <div className="space-y-4">
+      <div className="card flex flex-wrap gap-3 items-center">
+        <select className="input w-40" value={confianza} onChange={e => { setConfianza(e.target.value); setPage(1) }}>
+          <option value="">Toda confianza</option>
+          <option value="ALTA">Alta confianza</option>
+          <option value="MEDIA">Media confianza</option>
+          <option value="BAJA">Baja confianza</option>
+        </select>
+        {data?.por_confianza && (
+          <div className="flex gap-2 text-xs">
+            <span className="px-2 py-1 rounded bg-red-900/40 text-red-300">ALTA: {data.por_confianza.ALTA}</span>
+            <span className="px-2 py-1 rounded bg-yellow-900/40 text-yellow-300">MEDIA: {data.por_confianza.MEDIA}</span>
+            <span className="px-2 py-1 rounded bg-gray-800 text-gray-400">BAJA: {data.por_confianza.BAJA}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="card p-0 overflow-hidden">
+        <div className="px-4 py-3 bg-red-950/30 border-b border-red-900/30 flex items-start gap-2">
+          <ShieldAlert size={16} className="text-red-400 shrink-0 mt-0.5" />
+          <span className="text-sm text-red-300">
+            {data?.caveat ?? 'Empleados de MOPC/MINERD/SNS cuyo nombre coincide con un representante legal de empresa contratista del Estado — coincidencia por nombre, sin cédula, requiere verificación manual.'}
+          </span>
+        </div>
+        {loading ? (
+          <div className="p-8 text-center text-gray-500">Cruzando nómina contra representantes legales...</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-800 text-gray-400 text-xs uppercase">
+                  <th className="px-4 py-3 text-left">Confianza</th>
+                  <th className="px-4 py-3 text-left">Empleado</th>
+                  <th className="px-4 py-3 text-left">Institución</th>
+                  <th className="px-4 py-3 text-left">Cargo</th>
+                  <th className="px-4 py-3 text-left">Empresa(s) representada(s)</th>
+                  <th className="px-4 py-3 text-right">Monto asociado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data?.results?.map((m: any, i: number) => {
+                  const empresas = m.representaciones.map((r: any) => r.empresa)
+                  const montoTotal = m.representaciones.reduce((s: number, r: any) => s + (r.total_monto_recibido || 0), 0)
+                  return (
+                    <tr key={i} onClick={() => setSelected(m)}
+                      className="border-b border-gray-800/50 hover:bg-gray-800/30 cursor-pointer">
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${CONFIDENCE_COLORS[m.confianza] ?? ''}`}>
+                          {m.confianza}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-white max-w-[180px] truncate" title={m.nombre}>
+                        {m.nombre}
+                      </td>
+                      <td className="px-4 py-3 text-gray-400 text-xs max-w-[160px] truncate" title={m.institucion_empleo}>
+                        {m.institucion_empleo}
+                      </td>
+                      <td className="px-4 py-3 text-gray-400 text-xs max-w-[160px] truncate" title={m.cargo_empleo}>
+                        {m.cargo_empleo}
+                      </td>
+                      <td className="px-4 py-3 text-xs max-w-[260px] truncate" title={empresas.join(', ')}>
+                        {m.empresa_propia && (
+                          <span className="inline-block mr-1.5 px-1.5 py-0.5 rounded bg-orange-900/40 text-orange-300 text-[10px] font-bold align-middle">
+                            EMPRESA PROPIA
+                          </span>
+                        )}
+                        <span className="text-gray-300 align-middle">{empresas[0]}{empresas.length > 1 ? ` +${empresas.length - 1} más` : ''}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-orange-400">
+                        {fmtRD(montoTotal)}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="px-4 pb-3">
+          <Pager page={page} total={data?.total ?? 0} size={50} onChange={setPage} />
+        </div>
+      </div>
+
+      {selected && (
+        <ConflictoDetalleModal match={selected} onClose={() => setSelected(null)} />
+      )}
     </div>
   )
 }
@@ -443,6 +606,7 @@ const TABS: { id: Tab; label: string; icon: typeof Users }[] = [
   { id: 'salarios',      label: 'Top Salarios',   icon: TrendingUp },
   { id: 'instituciones', label: 'Por Institución', icon: Building2 },
   { id: 'buscar',        label: 'Buscar Empleado', icon: Search },
+  { id: 'conflicto',     label: 'Conflicto de Interés', icon: ShieldAlert },
 ]
 
 export default function Nominas() {
@@ -500,6 +664,7 @@ export default function Nominas() {
       {tab === 'salarios'      && <TabSalarios anios={anios} />}
       {tab === 'instituciones' && <TabInstituciones anios={anios} />}
       {tab === 'buscar'        && <TabBuscar anios={anios} />}
+      {tab === 'conflicto'     && <TabConflicto />}
     </div>
   )
 }

@@ -15,8 +15,6 @@ import AlertsPage from './pages/AlertsPage'
 import AIChat from './pages/AIChat'
 import ETLPanel from './pages/ETLPanel'
 import Intelligence from './pages/Intelligence'
-import Cooperatives from './pages/Cooperatives'
-import CooperativeDetail from './pages/CooperativeDetail'
 import Banks from './pages/Banks'
 import PoliticalParties from './pages/PoliticalParties'
 import Legislators from './pages/Legislators'
@@ -26,6 +24,7 @@ import Inhabilitados from './pages/Inhabilitados'
 import Nominas from './pages/Nominas'
 import Seguros from './pages/Seguros'
 import PGR from './pages/PGR'
+import GastoEjecutado from './pages/GastoEjecutado'
 
 export default function App() {
   const location = useLocation()
@@ -48,8 +47,6 @@ export default function App() {
         <Route path="/ai"                        element={<AIChat />} />
         <Route path="/etl"                       element={<ETLPanel />} />
         <Route path="/intelligence"              element={<Intelligence />} />
-        <Route path="/cooperatives"              element={<Cooperatives />} />
-        <Route path="/cooperatives/:id"          element={<CooperativeDetail />} />
         <Route path="/banks"                     element={<Banks />} />
         <Route path="/parties"                   element={<PoliticalParties />} />
         <Route path="/legislators"               element={<Legislators />} />
@@ -58,6 +55,7 @@ export default function App() {
         <Route path="/nominas"                   element={<Nominas />} />
         <Route path="/seguros"                   element={<Seguros />} />
         <Route path="/pgr"                       element={<PGR />} />
+        <Route path="/gasto-ejecutado"           element={<GastoEjecutado />} />
       </Routes>
       </ErrorBoundary>
     </Layout>

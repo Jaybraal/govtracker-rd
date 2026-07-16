@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, Building2, Landmark, Banknote,
-  Network, Bell, Bot, Database, Menu, X, Shield, Eye, Users, Flag, Gavel, ShieldAlert, Receipt, HeartPulse, Scale,
+  Network, Bell, Bot, Database, Menu, X, Shield, Eye, Flag, Gavel, ShieldAlert, Receipt, HeartPulse, Scale, Wallet,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -12,8 +12,8 @@ const NAV = [
   { to: '/companies',    icon: Building2,       label: 'Empresas' },
   { to: '/institutions', icon: Landmark,        label: 'Instituciones' },
   { to: '/loans',        icon: Banknote,        label: 'Préstamos' },
+  { to: '/gasto-ejecutado', icon: Wallet,        label: 'Gasto Ejecutado' },
   { to: '/graph',        icon: Network,         label: 'Red de Relaciones' },
-  { to: '/cooperatives', icon: Users,            label: 'Cooperativas' },
   { to: '/banks',        icon: Landmark,         label: 'Bancos' },
   { to: '/parties',      icon: Flag,             label: 'Partidos Políticos' },
   { to: '/legislators',  icon: Gavel,            label: 'Congreso Nacional' },

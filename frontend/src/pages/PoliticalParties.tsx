@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
   PieChart, Pie,
@@ -31,6 +32,7 @@ const IDEOLOGIA_LABEL: Record<string, string> = {
 type Tab = 'resumen' | 'financiamiento' | 'gastos' | 'proveedores' | 'detalle'
 
 export default function PoliticalParties() {
+  const navigate = useNavigate()
   const [tab, setTab]               = useState<Tab>('resumen')
   const [selectedParty, setSelected] = useState<any>(null)
   const [filterAnio, setFilterAnio]  = useState('')
@@ -246,7 +248,9 @@ export default function PoliticalParties() {
               </thead>
               <tbody>
                 {(financ || []).map((f: any, i: number) => (
-                  <tr key={i} className="table-row">
+                  <tr key={i} className="table-row cursor-pointer" onClick={() => {
+                    if (f.partido_id) { setSelected({ id: f.partido_id }); setTab('detalle') }
+                  }}>
                     <td className="px-4 py-2.5">
                       <span className="inline-flex items-center gap-1.5">
                         <span className="w-3 h-3 rounded-full" style={{ background: f.partido_color || '#6b7280' }} />
@@ -286,7 +290,9 @@ export default function PoliticalParties() {
               </thead>
               <tbody>
                 {(gastos || []).map((g: any, i: number) => (
-                  <tr key={i} className="table-row">
+                  <tr key={i} className="table-row cursor-pointer" onClick={() => {
+                    if (g.partido_id) { setSelected({ id: g.partido_id }); setTab('detalle') }
+                  }}>
                     <td className="px-4 py-2.5">
                       <span className="inline-flex items-center gap-1.5">
                         <span className="w-3 h-3 rounded-full" style={{ background: g.partido_color || '#6b7280' }} />
@@ -326,7 +332,9 @@ export default function PoliticalParties() {
               </thead>
               <tbody>
                 {(proveedores || []).map((p: any, i: number) => (
-                  <tr key={i} className={`table-row ${p.tambien_contratista_estado ? 'bg-yellow-950/10' : ''}`}>
+                  <tr key={i}
+                    onClick={() => p.empresa_id && navigate(`/companies/${p.empresa_id}`)}
+                    className={`table-row ${p.empresa_id ? 'cursor-pointer' : ''} ${p.tambien_contratista_estado ? 'bg-yellow-950/10' : ''}`}>
                     <td className="px-4 py-2.5 text-white font-medium">{p.proveedor}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{p.rnc || '—'}</td>
                     <td className="px-4 py-2.5 text-center text-gray-400">{p.num_facturas}</td>

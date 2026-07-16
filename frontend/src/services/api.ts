@@ -207,15 +207,6 @@ export const aiApi = {
     api.get('/ai/search', { params: { q } }).then(r => r.data),
 }
 
-export const cooperativesApi = {
-  list: (params?: Record<string, unknown>) =>
-    api.get('/cooperatives', { params }).then(r => r.data),
-  get: (id: number) => api.get(`/cooperatives/${id}`).then(r => r.data),
-  stats: () => api.get('/cooperatives/stats').then(r => r.data),
-  conContratosEstado: (limit = 50) =>
-    api.get('/cooperatives/con-contratos-estado', { params: { limit } }).then(r => r.data),
-}
-
 export const legislatorsApi = {
   list: (params?: Record<string, unknown>) =>
     api.get('/legislators', { params }).then(r => r.data),

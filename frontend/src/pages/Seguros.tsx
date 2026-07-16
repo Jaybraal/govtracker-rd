@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Search, HeartPulse, Building2, TrendingUp, AlertTriangle, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react'
 import PageHeader from '../components/PageHeader'
 import { useApi } from '../hooks/useApi'
@@ -59,6 +60,7 @@ function Pager({ page, total, size, onChange }: { page: number; total: number; s
 
 // ── Tab: Contratos ────────────────────────────────────────────
 function TabContratos({ anios }: { anios: number[] }) {
+  const navigate = useNavigate()
   const [anio, setAnio] = useState<number | ''>(anios[0] ?? '')
   const [page, setPage] = useState(1)
   const { data, loading } = useContratos(anio, page)
@@ -91,11 +93,13 @@ function TabContratos({ anios }: { anios: number[] }) {
               </thead>
               <tbody>
                 {data?.results?.map((r: any, i: number) => (
-                  <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                  <tr key={i}
+                    onClick={() => r.company_id && navigate(`/companies/${r.company_id}`)}
+                    className={`border-b border-gray-800/50 hover:bg-gray-800/30 ${r.company_id ? 'cursor-pointer' : ''}`}>
                     <td className="px-4 py-3 text-xs font-mono">
                       {r.codigo_contrato ? (
                         <a href={`https://www.dgcp.gob.do/index.php/proceso?buscar=${encodeURIComponent(r.codigo_contrato)}`}
-                          target="_blank" rel="noopener noreferrer"
+                          target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
                           className="text-gov-400 hover:text-gov-200 flex items-center gap-1 transition-colors" title="Buscar en portal DGCP">
                           {r.codigo_contrato}
                           <ExternalLink size={10} className="opacity-60 shrink-0" />
@@ -104,6 +108,7 @@ function TabContratos({ anios }: { anios: number[] }) {
                     </td>
                     <td className="px-4 py-3 font-medium text-white max-w-[180px] truncate" title={r.empresa}>
                       {r.empresa}
+                      {!r.company_id && <span className="text-gray-600 text-[10px] ml-1">(sin ficha)</span>}
                     </td>
                     <td className="px-4 py-3 text-gray-400 text-xs">{r.rpe}</td>
                     <td className="px-4 py-3 text-gray-400 text-xs">{r.objeto}</td>
@@ -134,6 +139,7 @@ function TabContratos({ anios }: { anios: number[] }) {
 
 // ── Tab: Top Aseguradoras ─────────────────────────────────────
 function TabAseguradoras({ anios }: { anios: number[] }) {
+  const navigate = useNavigate()
   const [anio, setAnio] = useState<number | ''>('')
   const { data, loading } = useAseguradoras(anio)
 
@@ -165,10 +171,13 @@ function TabAseguradoras({ anios }: { anios: number[] }) {
               </thead>
               <tbody>
                 {data?.results?.map((r: any, i: number) => (
-                  <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                  <tr key={i}
+                    onClick={() => r.company_id && navigate(`/companies/${r.company_id}`)}
+                    className={`border-b border-gray-800/50 hover:bg-gray-800/30 ${r.company_id ? 'cursor-pointer' : ''}`}>
                     <td className="px-4 py-3 text-gray-600">{i + 1}</td>
                     <td className="px-4 py-3 font-medium text-white max-w-[220px] truncate" title={r.empresa}>
                       {r.empresa}
+                      {!r.company_id && <span className="text-gray-600 text-[10px] ml-1">(sin ficha)</span>}
                     </td>
                     <td className="px-4 py-3 text-right text-gray-300">{r.num_contratos}</td>
                     <td className="px-4 py-3 text-right font-mono font-bold text-emerald-400">
@@ -194,8 +203,12 @@ function TabAseguradoras({ anios }: { anios: number[] }) {
   )
 }
 
-// ── Tab: Por Institución ──────────────────────────────────────
+// ── Tab: Empresas por RPE ──────────────────────────────────────
+// Esta tabla NO tiene dimensión de institución compradora — contratos_seguros solo
+// registra el RPE del vendedor. Agrupa por RPE (en vez de por nombre, como "Top
+// Aseguradoras") para detectar variantes de nombre registradas bajo el mismo RPE.
 function TabInstituciones({ anios }: { anios: number[] }) {
+  const navigate = useNavigate()
   const [anio, setAnio] = useState<number | ''>('')
   const { data, loading } = useInstituciones(anio)
 
@@ -206,7 +219,7 @@ function TabInstituciones({ anios }: { anios: number[] }) {
           <option value="">Todos los años</option>
           {anios.map(a => <option key={a} value={a}>{a}</option>)}
         </select>
-        <span className="text-sm text-gray-500">Instituciones que más gastan en seguros (top 50)</span>
+        <span className="text-sm text-gray-500">Agrupado por RPE — detecta variantes de nombre de la misma empresa (top 50)</span>
       </div>
       <div className="card p-0 overflow-hidden">
         {loading ? (
@@ -217,24 +230,30 @@ function TabInstituciones({ anios }: { anios: number[] }) {
               <thead>
                 <tr className="border-b border-gray-800 text-gray-400 text-xs uppercase">
                   <th className="px-4 py-3 text-left w-8">#</th>
-                  <th className="px-4 py-3 text-left">Institución (RPE)</th>
+                  <th className="px-4 py-3 text-left">Empresa (RPE)</th>
                   <th className="px-4 py-3 text-right">Contratos</th>
                   <th className="px-4 py-3 text-right">Gasto total</th>
-                  <th className="px-4 py-3 text-right">Empresas distintas</th>
+                  <th className="px-4 py-3 text-right">Variantes de nombre</th>
                   <th className="px-4 py-3 text-right">Mayor contrato</th>
                 </tr>
               </thead>
               <tbody>
                 {data?.results?.map((r: any, i: number) => (
-                  <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                  <tr key={i}
+                    onClick={() => r.company_id && navigate(`/companies/${r.company_id}`)}
+                    className={`border-b border-gray-800/50 hover:bg-gray-800/30 ${r.company_id ? 'cursor-pointer' : ''}`}>
                     <td className="px-4 py-3 text-gray-600">{i + 1}</td>
-                    <td className="px-4 py-3 font-medium text-white">{r.institucion_rpe}</td>
+                    <td className="px-4 py-3 font-medium text-white">
+                      {r.empresa}
+                      <span className="text-gray-600 text-xs ml-1">RPE {r.institucion_rpe}</span>
+                      {!r.company_id && <span className="text-gray-600 text-[10px] ml-1">(sin ficha)</span>}
+                    </td>
                     <td className="px-4 py-3 text-right text-gray-300">{r.num_contratos}</td>
                     <td className="px-4 py-3 text-right font-mono font-bold text-emerald-400">
                       {fmtRD(r.monto_total)}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <span className="bg-blue-900/40 text-blue-300 text-xs px-2 py-0.5 rounded">
+                      <span className={`text-xs px-2 py-0.5 rounded ${r.empresas_distintas > 1 ? 'bg-yellow-900/40 text-yellow-300' : 'bg-blue-900/40 text-blue-300'}`}>
                         {r.empresas_distintas}
                       </span>
                     </td>
@@ -362,7 +381,7 @@ function TabCaso() {
 const TABS: { id: Tab; label: string; icon: typeof HeartPulse }[] = [
   { id: 'contratos',     label: 'Contratos del Estado', icon: HeartPulse },
   { id: 'aseguradoras',  label: 'Top Aseguradoras',     icon: TrendingUp },
-  { id: 'instituciones', label: 'Por Institución',      icon: Building2 },
+  { id: 'instituciones', label: 'Empresas por RPE',      icon: Building2 },
   { id: 'caso',          label: 'Caso SENASA',          icon: AlertTriangle },
 ]
 
