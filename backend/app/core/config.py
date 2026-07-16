@@ -58,10 +58,14 @@ class Settings(BaseSettings):
     ALERT_ANOMALY_THRESHOLD: float = 5_000_000_000  # RD$5,000M — solo 15 contratos en 10 años cruzan esta línea
     ALERT_CAPTIVE_CONCENTRATION_PCT: float = 90.0
     ALERT_CAPTIVE_MIN_MONTO: float = 50_000_000  # RD$50M
+    ALERT_CONCENTRACION_MIN_MONTO: float = 20_000_000  # ver Task 12 — umbral calibrado con datos reales
 
-    # Telegram (opcional)
+    # Notificaciones
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     TELEGRAM_CHAT_ID: Optional[str] = None
+    GMAIL_USER: Optional[str] = None
+    GMAIL_APP_PASSWORD: Optional[str] = None
+    ALERT_EMAIL_TO: Optional[str] = None
 
     class Config:
         env_file = ".env"
