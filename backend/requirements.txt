@@ -46,3 +46,4 @@ sentence-transformers==3.0.0
 chromadb==0.5.0
 pytest==8.2.2
 pytest-mock==3.14.0
+pytest-asyncio==0.23.7
