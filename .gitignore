@@ -3,6 +3,7 @@ backend/__pycache__/
 backend/**/__pycache__/
 backend/.venv/
 backend/venv/
+backend/.venv-investigador/
 backend/*.db
 backend/*.db-shm
 backend/*.db-wal
