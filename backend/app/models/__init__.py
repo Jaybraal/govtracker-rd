@@ -11,6 +11,7 @@ from .cooperative import Cooperative, CoopType, CoopStatus
 from .bank import Bank, CompanyBankAccount, InstitutionBankAccount, BankType
 from .political_party import PoliticalParty, PartyFunding, PartyExpense, PartyStatus
 from .legislator import Legislator, LegislatorChamber
+from .commission import Commission, CommissionMember
 from .etl_run import EtlRun
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     "Bank", "CompanyBankAccount", "InstitutionBankAccount", "BankType",
     "PoliticalParty", "PartyFunding", "PartyExpense", "PartyStatus",
     "Legislator", "LegislatorChamber",
+    "Commission", "CommissionMember",
     "EtlRun",
 ]

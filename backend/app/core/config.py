@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     ALERT_CAPTIVE_CONCENTRATION_PCT: float = 90.0
     ALERT_CAPTIVE_MIN_MONTO: float = 50_000_000  # RD$50M
 
+    # Telegram (opcional)
+    TELEGRAM_BOT_TOKEN: Optional[str] = None
+    TELEGRAM_CHAT_ID: Optional[str] = None
+
     class Config:
         env_file = ".env"
         case_sensitive = True
