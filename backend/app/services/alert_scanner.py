@@ -156,17 +156,36 @@ def run_alert_scan(db: Session) -> list[Alert]:
                 datos_extra={},
             )))
 
-    # 4. Empresas con >20 contratos en misma institución
+    # 4. Empresas con >20 contratos en misma institución Y monto material
+    #    (>= RD$20M) — sin el filtro de monto, esta regla generaba 26,490
+    #    alertas (78% del total, ver spec §3.3); calibrado con SQL directo
+    #    contra la BD real: cnt>=20 solo = 5,298 grupos, cnt>=20 + monto
+    #    material = 466. La deduplicación además tenía un bug: chequeaba
+    #    existencia con una clave compuesta (company*100000+institution)
+    #    pero guardaba entidad_id=company_id sin componer, así que
+    #    `_alert_exists` nunca encontraba coincidencia real y cada corrida
+    #    volvía a crear la misma alerta (una empresa llegó a acumular 410
+    #    duplicados). Ahora se construye el set de pares ya alertados UNA
+    #    vez, leyendo institution_id desde datos_extra.
+    ya_alertadas = {
+        (a.entidad_id, (a.datos_extra or {}).get("institution_id"))
+        for a in db.query(Alert).filter(
+            Alert.tipo == AlertType.EMPRESA_CONCENTRADA, Alert.descartada == False,
+        ).all()
+    }
     rows = db.query(
         Contract.company_id, Contract.institution_id,
         func.count(Contract.id).label("cnt"),
         func.sum(Contract.monto_original).label("monto"),
     ).group_by(Contract.company_id, Contract.institution_id)\
-     .having(func.count(Contract.id) >= settings.ALERT_COMPANY_CONTRACT_COUNT).all()
+     .having(
+        func.count(Contract.id) >= settings.ALERT_COMPANY_CONTRACT_COUNT,
+        func.sum(Contract.monto_original) >= settings.ALERT_CONCENTRACION_MIN_MONTO,
+     ).all()
     for r in rows:
         comp = db.query(Company).get(r.company_id)
-        key = r.company_id * 100000 + r.institution_id
-        if comp and not _alert_exists(db, AlertType.EMPRESA_CONCENTRADA, key):
+        par = (r.company_id, r.institution_id)
+        if comp and par not in ya_alertadas:
             nuevas.append(_add(db, Alert(
                 tipo=AlertType.EMPRESA_CONCENTRADA,
                 severidad=AlertSeverity.MEDIA,
@@ -174,8 +193,9 @@ def run_alert_scan(db: Session) -> list[Alert]:
                 descripcion=f"{comp.nombre} tiene {r.cnt} contratos totalizando {_fmt(r.monto)}",
                 entidad_tipo="empresa", entidad_id=r.company_id,
                 monto_involucrado=r.monto,
-                datos_extra={},
+                datos_extra={"institution_id": r.institution_id},
             )))
+            ya_alertadas.add(par)
 
     # 5. Anomalías estadísticas de monto (contratos cuyo valor es órdenes de
     #    magnitud mayor a lo plausible — p.ej. RD$46,000M por "Servicios" de
