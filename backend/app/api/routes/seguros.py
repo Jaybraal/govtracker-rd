@@ -1,11 +1,26 @@
 import sqlite3
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
+from sqlalchemy.orm import Session
 from typing import Optional
 from pathlib import Path
+
+from ...core.database import get_db
+from ...models.company import Company
 
 router = APIRouter(prefix="/seguros", tags=["Seguros"])
 
 SEGUROS_DB = Path(__file__).parent.parent.parent.parent / "data" / "seguros.db"
+
+
+def _attach_company_ids(db: Session, rows: list[dict], rpe_key: str = "rpe") -> None:
+    """Cruza por RPE contra la base principal de empresas y añade company_id in-place."""
+    rpes = {r[rpe_key] for r in rows if r.get(rpe_key)}
+    if not rpes:
+        return
+    found = db.query(Company.rpe, Company.id).filter(Company.rpe.in_(rpes)).all()
+    by_rpe = {rpe: cid for rpe, cid in found}
+    for r in rows:
+        r["company_id"] = by_rpe.get(r.get(rpe_key))
 
 # Datos curados del caso SENASA — Operación Cobra (fuentes oficiales PGR)
 CASO_SENASA = {
@@ -98,6 +113,7 @@ def listar_contratos(
     empresa: Optional[str] = None,
     page: int = Query(1, ge=1),
     size: int = Query(50, le=200),
+    db: Session = Depends(get_db),
 ):
     conn = get_conn()
     try:
@@ -117,19 +133,22 @@ def listar_contratos(
             ORDER BY valor_contratado DESC
             LIMIT {size} OFFSET {offset}
         """).fetchall()
-        return {"total": count_row, "page": page, "size": size, "results": [dict(r) for r in rows]}
+        results = [dict(r) for r in rows]
+        _attach_company_ids(db, results)
+        return {"total": count_row, "page": page, "size": size, "results": results}
     finally:
         conn.close()
 
 
 @router.get("/top-aseguradoras")
-def top_aseguradoras(anio: Optional[int] = None):
+def top_aseguradoras(anio: Optional[int] = None, db: Session = Depends(get_db)):
     conn = get_conn()
     try:
         year_filter = f"AND anio = {anio}" if anio else "AND anio IS NOT NULL"
         rows = conn.execute(f"""
             SELECT
                 empresa,
+                MAX(rpe)                        AS rpe,
                 COUNT(*)                        AS num_contratos,
                 ROUND(SUM(valor_contratado), 0) AS monto_total,
                 ROUND(AVG(valor_contratado), 0) AS monto_promedio,
@@ -144,19 +163,25 @@ def top_aseguradoras(anio: Optional[int] = None):
             ORDER BY monto_total DESC
             LIMIT 50
         """).fetchall()
-        return {"results": [dict(r) for r in rows]}
+        results = [dict(r) for r in rows]
+        _attach_company_ids(db, results)
+        return {"results": results}
     finally:
         conn.close()
 
 
 @router.get("/por-institucion")
-def por_institucion(anio: Optional[int] = None):
+def por_institucion(anio: Optional[int] = None, db: Session = Depends(get_db)):
+    """Pese al nombre del endpoint (mantenido por compatibilidad), esta tabla NO tiene
+    dimensión de institución compradora — contratos_seguros solo registra el RPE del
+    vendedor. Agrupa por RPE para detectar variantes de nombre bajo un mismo registro."""
     conn = get_conn()
     try:
         year_filter = f"AND anio = {anio}" if anio else "AND anio IS NOT NULL"
         rows = conn.execute(f"""
             SELECT
                 rpe                             AS institucion_rpe,
+                MIN(empresa)                    AS empresa,
                 COUNT(*)                        AS num_contratos,
                 ROUND(SUM(valor_contratado), 0) AS monto_total,
                 COUNT(DISTINCT empresa)         AS empresas_distintas,
@@ -170,7 +195,11 @@ def por_institucion(anio: Optional[int] = None):
             ORDER BY monto_total DESC
             LIMIT 50
         """).fetchall()
-        return {"results": [dict(r) for r in rows]}
+        results = [dict(r) for r in rows]
+        for r in results:
+            r["rpe"] = r["institucion_rpe"]
+        _attach_company_ids(db, results)
+        return {"results": results}
     finally:
         conn.close()
 

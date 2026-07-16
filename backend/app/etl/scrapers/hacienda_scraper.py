@@ -60,7 +60,6 @@ class HaciendaScraper:
             if not existing:
                 inst = Institution(
                     codigo=codigo, nombre=nombre, siglas=siglas,
-                    fuente="Hacienda - Datos Abiertos",
                 )
                 self.db.add(inst)
                 count += 1

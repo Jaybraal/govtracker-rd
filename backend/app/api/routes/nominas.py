@@ -1,7 +1,10 @@
+import re
 import sqlite3
 import os
+import unicodedata
+from functools import lru_cache
 from fastapi import APIRouter, Query, HTTPException
-from typing import Optional
+from typing import List, Optional
 from pathlib import Path
 
 router = APIRouter(prefix="/nominas", tags=["Nóminas"])
@@ -14,6 +17,14 @@ def get_conn():
     conn = sqlite3.connect(str(NOMINAS_DB), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def _norm(s: str) -> str:
+    n = (s or "").upper().strip()
+    n = unicodedata.normalize("NFKD", n).encode("ascii", "ignore").decode()
+    n = re.sub(r"\s+", " ", n)
+    n = re.sub(r"[^A-Z\s]", "", n)
+    return n.strip()
 
 
 @router.get("/stats")
@@ -262,3 +273,151 @@ def buscar_empleado(
         }
     finally:
         conn.close()
+
+
+@lru_cache(maxsize=8)
+def _compute_conflicto_matches(instituciones: tuple) -> tuple:
+    """
+    Hace el cruce completo (nómina ~360K filas × representantes legales
+    ~123K filas) y lo cachea en memoria del proceso — toma ~55s la primera
+    vez por institución-set; sin esto, cada cambio de página/filtro en la UI
+    repetiría el cálculo completo. El caché se invalida solo al reiniciar el
+    proceso (los datos de origen no cambian salvo que se re-importen).
+    """
+    from ...core.database import SessionLocal
+    from ...models.company import LegalRepresentative, Company
+
+    db = SessionLocal()
+    try:
+        reps_por_nombre: dict[str, list] = {}
+        rows = db.query(
+            LegalRepresentative.nombre, LegalRepresentative.cedula, LegalRepresentative.cargo,
+            Company.id, Company.nombre, Company.rnc, Company.total_contratos, Company.total_monto_recibido,
+        ).join(Company, Company.id == LegalRepresentative.company_id).all()
+        for nombre, cedula, cargo, company_id, company_nombre, rnc, total_contratos, total_monto in rows:
+            key = _norm(nombre)
+            if len(key) <= 6:  # evita falsos positivos triviales en nombres muy cortos/incompletos
+                continue
+            reps_por_nombre.setdefault(key, []).append({
+                "cedula": cedula, "cargo": cargo, "company_id": company_id,
+                "empresa": company_nombre, "rnc": rnc,
+                "total_contratos": total_contratos, "total_monto_recibido": total_monto,
+            })
+    finally:
+        db.close()
+
+    conn = get_conn()
+    try:
+        placeholders = ",".join("?" for _ in instituciones)
+        sql = f"""
+            SELECT DISTINCT nombre, nombre_raw, institucion, funcion
+            FROM empleados
+            WHERE institucion IN ({placeholders})
+              AND LENGTH(nombre) > 6
+              AND funcion NOT LIKE '%MONTO_ANOMALO%'
+        """
+        empleados_rows = conn.execute(sql, instituciones).fetchall()
+    finally:
+        conn.close()
+
+    matches = []
+    vistos = set()
+    for row in empleados_rows:
+        nombre = row["nombre"]
+        if nombre in vistos or nombre not in reps_por_nombre:
+            continue
+        vistos.add(nombre)
+        num_tokens = len(nombre.split())
+        num_empresas = len(reps_por_nombre[nombre])
+        # Señal mucho más fuerte que "aparece como contacto de la empresa de
+        # otro": la empresa contratista está registrada EXACTAMENTE a nombre
+        # propio del empleado (persona física / EIRL bajo su propia
+        # identidad) — coincidencia de nombre completo contra el nombre legal
+        # de toda una empresa es estadísticamente mucho más rara que contra
+        # un campo de "contacto registrado", así que se marca aparte.
+        empresa_propia = any(_norm(r["empresa"]) == nombre for r in reps_por_nombre[nombre])
+        # Nombres de pocos tokens (apellidos comunes dominicanos) y/o que
+        # "representan" muchas empresas a la vez son casi siempre colisión de
+        # nombre, no la misma persona — mismo criterio que ya usa el proyecto
+        # en intelligence.py para descartar "gestores de constitución" cuando
+        # num_repr es alto sin cédula. Sin cédula en ninguno de los dos lados
+        # acá, así que la única señal estadística disponible es tokens + cantidad.
+        if empresa_propia or (num_tokens >= 4 and num_empresas <= 2):
+            nivel_confianza = "ALTA"
+        elif num_tokens >= 3 and num_empresas <= 5:
+            nivel_confianza = "MEDIA"
+        else:
+            nivel_confianza = "BAJA"
+        matches.append({
+            "nombre": row["nombre_raw"],
+            "institucion_empleo": row["institucion"],
+            "cargo_empleo": row["funcion"],
+            "confianza": nivel_confianza,
+            "empresa_propia": empresa_propia,
+            "num_empresas": num_empresas,
+            "representaciones": reps_por_nombre[nombre],
+        })
+
+    orden_confianza = {"ALTA": 0, "MEDIA": 1, "BAJA": 2}
+    matches.sort(key=lambda m: (
+        orden_confianza[m["confianza"]],
+        -sum(r["total_monto_recibido"] or 0 for r in m["representaciones"]),
+    ))
+    return tuple(matches)
+
+
+@router.get("/conflicto-representantes")
+def conflicto_representantes(
+    instituciones: Optional[List[str]] = Query(
+        None,
+        description="Instituciones a cruzar; por defecto las 3 agregadas vía MAP (MOPC/MINERD/SNS)",
+    ),
+    confianza: Optional[str] = Query(None, description="Filtrar por ALTA/MEDIA/BAJA"),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, le=200),
+):
+    """
+    Cruza nómina de empleados públicos contra representantes/contactos
+    registrados de empresas contratistas del Estado (RPE de DGCP): ¿algún
+    empleado de la institución aparece también como representante legal de
+    una empresa que le vende al Estado?
+
+    Mismo patrón que la alerta POSIBLE_CONFLICTO para legisladores
+    (services/alert_scanner.py), pero contra nómina en vez de la lista de
+    diputados/senadores. Coincidencia por NOMBRE NORMALIZADO únicamente —
+    ni la nómina de MAP ni el RPE de DGCP traen cédula, así que esto NUNCA
+    confirma identidad por sí solo; es un punto de partida para
+    verificación manual, no una acusación.
+    """
+    instituciones = instituciones or [
+        "Ministerio de Obras Públicas y Comunicaciones",
+        "Ministerio de Educación",
+        "Servicio Nacional de Salud",
+    ]
+    matches = list(_compute_conflicto_matches(tuple(sorted(instituciones))))
+
+    por_confianza = {
+        nivel: sum(1 for m in matches if m["confianza"] == nivel)
+        for nivel in ("ALTA", "MEDIA", "BAJA")
+    }
+
+    if confianza:
+        matches = [m for m in matches if m["confianza"] == confianza.upper()]
+
+    total = len(matches)
+    offset = (page - 1) * size
+    return {
+        "total": total,
+        "por_confianza": por_confianza,
+        "page": page,
+        "size": size,
+        "instituciones_consultadas": instituciones,
+        "caveat": (
+            "Coincidencia por nombre normalizado únicamente, sin cédula de por medio en "
+            "ninguna de las dos fuentes — NUNCA confirma identidad. 'confianza' es solo un "
+            "proxy estadístico (más tokens en el nombre + menos empresas asociadas = menos "
+            "probable que sea colisión de nombre común); incluso ALTA requiere verificación "
+            "manual antes de concluir conflicto de interés"
+        ),
+        "results": matches[offset:offset + size],
+    }

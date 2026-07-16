@@ -20,13 +20,16 @@ formato de descarga masiva.
 import csv
 import os
 import re
+import shutil
+import tempfile
 from datetime import datetime
 
+import httpx
 from loguru import logger
 from sqlalchemy import text
 
 from ...core.database import SessionLocal, engine
-from ...models.company import Company
+from ...models.company import Company, SupplierDisqualification
 from ...models.institution import Institution, InstitutionType
 from ...models.contract import Contract, ContractStatus
 
@@ -40,6 +43,12 @@ FUENTE_PROVEEDORES = "DGCP — Registro de Proveedores del Estado, datos.gob.do 
 URL_PROVEEDORES = "https://www.dgcp.gob.do/new_dgcp/documentos/da/actualizados/proveedores-del-estado.csv"
 FUENTE_ADJUDICACIONES = "DGCP — Adjudicaciones SECP, datos.gob.do (licencia ODbL)"
 URL_ADJUDICACIONES = "https://www.dgcp.gob.do/new_dgcp/documentos/da/actualizados/adjudicaciones-secp.csv"
+# URLs inferidas por el mismo patrón de nombre de archivo que las dos de arriba
+# (que sí están verificadas y documentadas desde la sesión 2026-06-07). NO se
+# pudieron confirmar en esta sesión por falta de acceso a red en el entorno —
+# verificar con `curl -I` antes de confiar en ellas en producción.
+URL_PROCESOS = "https://www.dgcp.gob.do/new_dgcp/documentos/da/actualizados/datos-procesos-publicados.csv"
+URL_INHABILITADOS = "https://www.dgcp.gob.do/new_dgcp/documentos/da/actualizados/proveedores-del-estado-inhabilitados.csv"
 
 BATCH_SIZE = 5000
 
@@ -113,6 +122,12 @@ def _parse_date(val):
 # ─── Fase 1: Empresas (Registro de Proveedores del Estado) ──────────────────
 
 def import_providers() -> int:
+    """Devuelve la cantidad de proveedores NUEVOS (RPE que no existían en la
+    BD antes de esta corrida) — no el total de filas procesadas del CSV.
+    Antes devolvía el total procesado, que con un CSV de 132K filas siempre
+    se reportaba como "132188 nuevos" aunque no hubiera ninguno realmente
+    nuevo, inflando la señal de "esto cambió" que necesita la detección
+    temprana para saber si vale la pena re-escanear."""
     logger.info("DGCP bulk: importando proveedores del Estado (RPE) → empresas...")
     sql = text("""
         INSERT OR IGNORE INTO empresas
@@ -122,8 +137,11 @@ def import_providers() -> int:
         VALUES (:rpe, :rnc, :nombre, :tipo_empresa, :telefono, :email, :direccion,
                 :provincia, :pais, :activo, 0, 0, 0, 0, CURRENT_TIMESTAMP)
     """)
+    with engine.begin() as conn:
+        existing_rpes = {r[0] for r in conn.execute(text("SELECT rpe FROM empresas WHERE rpe IS NOT NULL")).all()}
+
     batch, seen_rpe = [], set()
-    total = 0
+    total = nuevos = 0
     with open(PROVEEDORES_CSV, encoding="utf-8-sig") as f, engine.begin() as conn:
         for row in csv.DictReader(f):
             rpe = _clean(row.get("RPE"))
@@ -131,6 +149,8 @@ def import_providers() -> int:
             if not rpe or not nombre or rpe in seen_rpe:
                 continue
             seen_rpe.add(rpe)
+            if rpe not in existing_rpes:
+                nuevos += 1
 
             tipo_doc = _clean(row.get("TIPO_DOCUMENTO"))
             numero_doc = _clean(row.get("NUMERO_DOCUMENTO"))
@@ -156,8 +176,8 @@ def import_providers() -> int:
         if batch:
             conn.execute(sql, batch)
             total += len(batch)
-    logger.info(f"DGCP bulk: {total} proveedores procesados (RPE únicos)")
-    return total
+    logger.info(f"DGCP bulk: {total} proveedores procesados ({nuevos} nuevos, RPE únicos)")
+    return nuevos
 
 
 # ─── Fase 1b: Representantes/contactos registrados en el RPE ────────────────
@@ -169,18 +189,22 @@ def import_representantes() -> int:
     Representante, Gerente, Presidente, etc.), TELEFONO_CONTACTO/CELULAR_CONTACTO
     y CORREO_CONTACTO. Es la única fuente pública gratuita de "representante
     legal" disponible en bulk (DGII no publica esto). Una fila por empresa.
+
+    Solo inserta para empresas que TODAVÍA no tienen representante registrado
+    (antes esta función se saltaba por completo si la tabla ya tenía alguna
+    fila, lo que significaba que un proveedor nuevo aparecido en un CSV
+    re-descargado nunca recibía su representante legal — y por lo tanto nunca
+    entraba al cruce de conflicto de interés contra legisladores).
     """
     logger.info("DGCP bulk: importando representantes/contactos (RPE) → representantes_legales...")
 
     with engine.begin() as conn:
-        ya_importado = conn.execute(text("SELECT COUNT(*) FROM representantes_legales")).scalar()
-        if ya_importado:
-            logger.info(f"DGCP bulk: representantes_legales ya tiene {ya_importado} filas — se omite")
-            return 0
-
         rpe_to_id = dict(conn.execute(
             text("SELECT rpe, id FROM empresas WHERE rpe IS NOT NULL AND rpe != ''")
         ).all())
+        ya_tienen_rep = {row[0] for row in conn.execute(
+            text("SELECT DISTINCT company_id FROM representantes_legales")
+        ).all()}
 
     sql = text("""
         INSERT INTO representantes_legales
@@ -195,7 +219,7 @@ def import_representantes() -> int:
             rpe = _clean(row.get("RPE"))
             company_id = rpe_to_id.get(rpe) if rpe else None
             nombre = _clean(row.get("CONTACTO"))
-            if not company_id or not nombre or company_id in seen_company:
+            if not company_id or not nombre or company_id in seen_company or company_id in ya_tienen_rep:
                 continue
             seen_company.add(company_id)
             batch.append({
@@ -347,13 +371,31 @@ def import_inhabilitados(db) -> int:
     cruzando por RPE contra las empresas ya importadas. Cada fila representa
     un evento de sanción real (RPE + fecha + motivo) tal como lo publica DGCP —
     se deduplican únicamente los registros idénticos (mismo RPE/fecha/motivo
-    re-anotados con distinta hora), preservando sanciones distintas en el tiempo."""
+    re-anotados con distinta hora), preservando sanciones distintas en el tiempo.
+
+    Antes solo dedupaba DENTRO del CSV de la corrida actual, sin mirar lo que
+    ya había en la BD — al volver a llamarse (p.ej. desde la detección
+    temprana, pensada para correr repetidas veces) duplicaba los ~2,000
+    eventos de inhabilitación en cada corrida. Ahora también excluye los que
+    ya existen en `proveedores_inhabilitados`."""
     if not os.path.exists(INHABILITADOS_CSV):
         logger.warning(f"  inhabilitados: no se encontró {INHABILITADOS_CSV}, se omite")
         return 0
     logger.info("DGCP bulk: importando proveedores inhabilitados (registro oficial DGCP/SECP)...")
 
     rpe_to_company = {rpe: cid for cid, rpe in db.query(Company.id, Company.rpe).filter(Company.rpe.isnot(None)).all()}
+    # Vía ORM (no SQL crudo) para que SQLAlchemy aplique el result processor
+    # del tipo DateTime y devuelva objetos datetime reales — comparar contra
+    # un string crudo de sqlite3 (formato con espacio/microsegundos) nunca
+    # calzaría con el .isoformat() de un datetime recién parseado del CSV.
+    ya_existen = {
+        (rpe, fecha.isoformat() if fecha else None, motivo)
+        for rpe, fecha, motivo in db.query(
+            SupplierDisqualification.rpe,
+            SupplierDisqualification.fecha_inhabilitacion,
+            SupplierDisqualification.motivo,
+        ).all()
+    }
 
     sql = text("""
         INSERT INTO proveedores_inhabilitados
@@ -370,8 +412,10 @@ def import_inhabilitados(db) -> int:
             motivo = _clean(row.get("MOTIVO_INHABILITACION"))
             if not rpe or not motivo:
                 continue
-            key = (rpe, _clean(row.get("FECHA_INHABILITACION")), motivo)
-            if key in seen:
+            fecha_inhab = _parse_date(row.get("FECHA_INHABILITACION"))
+            fecha_key = fecha_inhab.isoformat() if fecha_inhab else None
+            key = (rpe, fecha_key, motivo)
+            if key in seen or key in ya_existen:
                 continue
             seen.add(key)
             company_id = rpe_to_company.get(rpe)
@@ -381,7 +425,7 @@ def import_inhabilitados(db) -> int:
                 "rpe": rpe,
                 "company_id": company_id,
                 "motivo": motivo,
-                "fecha_inhabilitacion": _parse_date(row.get("FECHA_INHABILITACION")),
+                "fecha_inhabilitacion": fecha_inhab,
                 "fecha_habilitacion": _parse_date(row.get("FECHA_HABILITACION")),
                 "oficio_inhabilitacion": _clean(row.get("OFICIO_INHABILITACION")),
                 "url_certificacion": _clean(row.get("URL_CERTIFICACION_RPE")),
@@ -442,8 +486,63 @@ def recompute_stats(db):
     logger.info("DGCP bulk: estadísticas recalculadas")
 
 
-def run_dgcp_bulk_import() -> dict:
-    """Ejecuta el pipeline completo: proveedores → instituciones → adjudicaciones → stats."""
+_DOWNLOADS = {
+    "proveedores": (URL_PROVEEDORES, PROVEEDORES_CSV),
+    "adjudicaciones": (URL_ADJUDICACIONES, ADJUDICACIONES_CSV),
+    "procesos": (URL_PROCESOS, PROCESOS_CSV),
+    "inhabilitados": (URL_INHABILITADOS, INHABILITADOS_CSV),
+}
+
+
+def download_latest_csvs(timeout: float = 120.0) -> dict:
+    """
+    Descarga la versión más reciente de cada CSV oficial directamente desde
+    dgcp.gob.do (las URLs "/actualizados/..." — el propio DGCP las refresca
+    en cada corte de datos abiertos, sin necesidad de bajarlas a mano cada
+    vez). Es lo que convierte la carga masiva (antes 100% manual) en algo que
+    se puede re-ejecutar para detectar contratos/proveedores nuevos.
+
+    No asume que la descarga trajo algo nuevo ni que el archivo remoto es
+    válido: si la respuesta no parece un CSV, o la descarga falla, conserva
+    el archivo local existente y reporta el error en vez de sobreescribir con
+    basura. Devuelve por archivo: "actualizado" | "sin_cambios" | "error: ...".
+    """
+    os.makedirs(DATA_DIR, exist_ok=True)
+    resultados = {}
+    with httpx.Client(timeout=timeout, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}) as client:
+        for nombre, (url, destino) in _DOWNLOADS.items():
+            try:
+                resp = client.get(url)
+                resp.raise_for_status()
+                contenido = resp.content
+                if not contenido or b"," not in contenido[:2000]:
+                    resultados[nombre] = "error: la respuesta no parece un CSV"
+                    logger.warning(f"DGCP download {nombre}: respuesta no parece CSV, se conserva el archivo local")
+                    continue
+                if os.path.exists(destino) and open(destino, "rb").read() == contenido:
+                    resultados[nombre] = "sin_cambios"
+                    continue
+                with tempfile.NamedTemporaryFile(dir=DATA_DIR, delete=False) as tmp:
+                    tmp.write(contenido)
+                    tmp_path = tmp.name
+                shutil.move(tmp_path, destino)
+                resultados[nombre] = "actualizado"
+                logger.info(f"DGCP download {nombre}: actualizado ({len(contenido)} bytes)")
+            except Exception as e:
+                resultados[nombre] = f"error: {e}"
+                logger.warning(f"DGCP download {nombre} falló, se conserva el archivo local si existe: {e}")
+    return resultados
+
+
+def run_dgcp_bulk_import(descargar: bool = False) -> dict:
+    """Ejecuta el pipeline completo: (descarga opcional) → proveedores →
+    instituciones → adjudicaciones → stats. Es seguro llamarlo repetidas
+    veces: cada fase usa upserts/dedup por clave de negocio (RPE, RNC,
+    numero_contrato), así que una corrida sobre un CSV ya importado no
+    duplica nada y una corrida sobre un CSV con filas nuevas solo agrega
+    esas filas."""
+    descargas = download_latest_csvs() if descargar else None
+
     if not (os.path.exists(PROVEEDORES_CSV) and os.path.exists(ADJUDICACIONES_CSV) and os.path.exists(PROCESOS_CSV)):
         raise FileNotFoundError(
             f"Faltan datasets en {DATA_DIR}. Descargar de datos.gob.do: "
@@ -463,7 +562,11 @@ def run_dgcp_bulk_import() -> dict:
     finally:
         db.close()
 
-    result = {"proveedores": n_providers, "representantes": n_representantes, "contratos": n_contracts, "instituciones_resueltas": len(sigla_to_inst_id), "inhabilitados": n_inhabilitados}
+    result = {
+        "proveedores": n_providers, "representantes": n_representantes, "contratos": n_contracts,
+        "instituciones_resueltas": len(sigla_to_inst_id), "inhabilitados": n_inhabilitados,
+        "descargas": descargas,
+    }
     logger.info(f"DGCP bulk import completado: {result}")
     return result
 

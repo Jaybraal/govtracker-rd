@@ -74,6 +74,7 @@ def financiamiento_detalle(
     return [
         {
             "id": r.id,
+            "partido_id": r.party.id if r.party else None,
             "partido": r.party.siglas if r.party else "—",
             "partido_nombre": r.party.nombre if r.party else "—",
             "partido_color": r.party.color if r.party else None,
@@ -107,6 +108,7 @@ def gastos_detalle(
     rows = q.order_by(desc(PartyExpense.monto)).all()
     return [
         {
+            "partido_id": r.party.id if r.party else None,
             "partido": r.party.siglas if r.party else "—",
             "partido_color": r.party.color if r.party else None,
             "anio": r.anio,
