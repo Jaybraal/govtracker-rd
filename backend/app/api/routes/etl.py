@@ -1,16 +1,21 @@
-from fastapi import APIRouter, BackgroundTasks, UploadFile, File, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile, File, Query
+from sqlalchemy.orm import Session
 from typing import Optional, List
+from datetime import datetime
 import asyncio
 import os
 import tempfile
 from loguru import logger
 from ...core.config import settings
+from ...core.database import get_db, SessionLocal
 from ...etl.pipeline import ETLPipeline
 from ...etl.parsers.pdf_parser import PDFParser, ExcelParser
+from ...models.etl_run import EtlRun
 
 router = APIRouter(prefix="/etl", tags=["ETL / Scraping"])
 
 _pipeline_status = {"running": False, "last_run": None, "last_result": None}
+_deteccion_temprana_status = {"running": False}
 
 
 @router.post("/seed/punta-catalina")
@@ -109,6 +114,32 @@ async def seed_seguridad():
     return {"status": "ok", "registros": count}
 
 
+@router.post("/seed/map-nominas")
+async def seed_map_nominas(
+    background_tasks: BackgroundTasks,
+    anio: int = Query(..., description="Año a importar, ej. 2026"),
+    meses: Optional[List[int]] = Query(None, description="Meses 1-12; por defecto todo el año"),
+):
+    """
+    Importa nómina de MOPC, Ministerio de Educación y Servicio Nacional de
+    Salud desde el dataset centralizado de MAP (map.gob.do/datosabiertos) —
+    las 3 instituciones grandes que faltaban en las 90 ya cubiertas por
+    scrapers individuales en data/nominas.db. Corre en background porque cada
+    mes descarga un CSV de ~60MB con la nómina completa de gobierno central.
+    """
+    background_tasks.add_task(_run_map_nominas_bg, anio, meses)
+    return {"status": "started", "message": f"Importando nómina MAP {anio} en background"}
+
+
+async def _run_map_nominas_bg(anio: int, meses: Optional[List[int]]):
+    from ...etl.scrapers.map_nominas_scraper import run_map_nominas_scraper
+    try:
+        result = await run_map_nominas_scraper(anio, meses)
+        logger.info(f"MAP nóminas {anio} completado: {result}")
+    except Exception as e:
+        logger.error(f"MAP nóminas {anio} falló: {e}")
+
+
 @router.post("/seed/camara-diputados")
 async def seed_camara_diputados():
     """Sincroniza Cámara de Diputados / Senado desde la API en vivo del SIL (diputadosrd.gob.do)."""
@@ -165,6 +196,98 @@ async def run_etl(
 @router.get("/status")
 def etl_status():
     return _pipeline_status
+
+
+@router.post("/deteccion-temprana")
+async def run_deteccion_temprana(
+    background_tasks: BackgroundTasks,
+    descargar: bool = Query(True, description="Descargar los CSV oficiales más recientes de DGCP antes de importar"),
+):
+    """
+    Pipeline de detección temprana, todo en una sola llamada:
+    1. Descarga los datasets oficiales más recientes de DGCP (proveedores,
+       adjudicaciones, procesos, inhabilitados) — solo agrega lo nuevo.
+    2. Refresca el cruce legislador ↔ representante legal de empresa contratista.
+    3. Corre el scanner de alertas sobre los datos actualizados.
+
+    El objetivo es que un mismo disparo (manual hoy; programable con cron/
+    scheduler cuando esto esté desplegado) detecte conflictos de interés o
+    patrones sospechosos en contratos recién publicados, en vez de depender
+    de que alguien note la noticia primero y luego alguien dispare cada paso
+    de scraping/scan por separado.
+    """
+    if _deteccion_temprana_status["running"]:
+        return {"status": "already_running", "message": "La detección temprana ya está en ejecución"}
+    background_tasks.add_task(_run_deteccion_temprana_bg, descargar)
+    return {"status": "started", "message": "Detección temprana iniciada en background"}
+
+
+async def _run_deteccion_temprana_bg(descargar: bool):
+    from ...etl.scrapers.dgcp_bulk_importer import run_dgcp_bulk_import
+    from ...etl.scrapers.camara_diputados_scraper import run_camara_diputados_scraper
+    from ...services.alert_scanner import run_alert_scan
+
+    _deteccion_temprana_status["running"] = True
+    db = SessionLocal()
+    run = EtlRun(fuente="deteccion_temprana", estado="ok")
+    db.add(run)
+    db.commit()
+    detalle: dict = {}
+    try:
+        detalle["dgcp"] = run_dgcp_bulk_import(descargar=descargar)
+
+        try:
+            n_legisladores = await run_camara_diputados_scraper()
+            detalle["camara_diputados"] = {"status": "ok", "registros": n_legisladores}
+        except Exception as e:
+            logger.warning(f"Detección temprana: falló refresh de Cámara de Diputados: {e}")
+            detalle["camara_diputados"] = {"status": "error", "error": str(e)}
+
+        nuevas_alertas = run_alert_scan(db)
+        detalle["alertas_nuevas"] = [
+            {
+                "tipo": a.tipo.value, "severidad": a.severidad.value,
+                "titulo": a.titulo, "monto_involucrado": a.monto_involucrado,
+            }
+            for a in nuevas_alertas
+        ]
+
+        run.estado = "ok"
+        run.registros_nuevos = (detalle["dgcp"].get("contratos", 0) or 0) + (detalle["dgcp"].get("proveedores", 0) or 0)
+        run.alertas_nuevas = len(nuevas_alertas)
+        run.detalle = detalle
+        run.finalizado_en = datetime.utcnow()
+        db.commit()
+        _pipeline_status["last_result"] = detalle
+        _pipeline_status["last_run"] = datetime.utcnow().isoformat()
+    except Exception as e:
+        logger.error(f"Detección temprana falló: {e}")
+        run.estado = "error"
+        run.error = str(e)
+        run.detalle = detalle
+        run.finalizado_en = datetime.utcnow()
+        db.commit()
+    finally:
+        db.close()
+        _deteccion_temprana_status["running"] = False
+
+
+@router.get("/runs")
+def list_etl_runs(db: Session = Depends(get_db), limit: int = Query(20, le=100)):
+    """Historial real de corridas ETL — responde 'cada cuánto se actualiza'
+    con datos persistidos en vez del estado en memoria que se perdía al
+    reiniciar el servidor."""
+    runs = db.query(EtlRun).order_by(EtlRun.iniciado_en.desc()).limit(limit).all()
+    return [
+        {
+            "id": r.id, "fuente": r.fuente, "estado": r.estado,
+            "iniciado_en": r.iniciado_en.isoformat() if r.iniciado_en else None,
+            "finalizado_en": r.finalizado_en.isoformat() if r.finalizado_en else None,
+            "registros_nuevos": r.registros_nuevos, "alertas_nuevas": r.alertas_nuevas,
+            "detalle": r.detalle, "error": r.error,
+        }
+        for r in runs
+    ]
 
 
 @router.post("/upload/contracts")

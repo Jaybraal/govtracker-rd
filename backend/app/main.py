@@ -6,7 +6,7 @@ import os
 
 from .core.config import settings
 from .core.database import engine, Base
-from .api.routes import contracts, companies, institutions, loans, graph, alerts, ai_chat, export, etl, intelligence, cooperatives, banks, political_parties, legislators, nominas, seguros, pgr, comisiones
+from .api.routes import contracts, companies, institutions, loans, graph, alerts, ai_chat, export, etl, intelligence, cooperatives, banks, political_parties, legislators, nominas, seguros, pgr, comisiones, gasto_ejecutado
 
 # Crear tablas
 Base.metadata.create_all(bind=engine)
@@ -51,6 +51,7 @@ app.include_router(nominas.router,           prefix="/api")
 app.include_router(seguros.router,           prefix="/api")
 app.include_router(pgr.router,               prefix="/api")
 app.include_router(comisiones.router,        prefix="/api")
+app.include_router(gasto_ejecutado.router,   prefix="/api")
 
 
 @app.get("/api/health")
