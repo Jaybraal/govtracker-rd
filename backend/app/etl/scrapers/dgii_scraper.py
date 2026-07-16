@@ -166,8 +166,8 @@ class DGIIScraper:
 
         # Representante legal — el dato más valioso
         repr_nombre = data.get("representante", "").strip()
+        cedula_nueva = (data.get("cedula_repr") or "").strip()
         if repr_nombre:
-            # Verificar si ya existe
             existing = self.db.query(LegalRepresentative).filter(
                 LegalRepresentative.company_id == comp.id,
                 LegalRepresentative.nombre == repr_nombre,
@@ -176,11 +176,18 @@ class DGIIScraper:
                 rep = LegalRepresentative(
                     company_id=comp.id,
                     nombre=repr_nombre,
-                    cedula=data.get("cedula_repr", ""),
+                    cedula=cedula_nueva,
                     cargo="Representante Legal (DGII)",
                 )
                 self.db.add(rep)
                 logger.info(f"  ✓ Representante DGII: {repr_nombre} → {comp.nombre[:40]}")
+            elif cedula_nueva and not (existing.cedula or "").strip():
+                # Backfill: la fila ya existía (normalmente creada por el
+                # importador de DGCP, que no trae cédula) pero le faltaba
+                # cédula y DGII sí la tiene — sin esto, ~123K representantes
+                # se quedan sin identidad verificable para siempre.
+                existing.cedula = cedula_nueva
+                logger.info(f"  ✓ Cédula rellenada para {repr_nombre}: {cedula_nueva}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
