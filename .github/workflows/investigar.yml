@@ -29,7 +29,7 @@ jobs:
             govtracker-db-
 
       - name: Instalar dependencias
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-investigador.txt
 
       - name: Preparar .env mínimo para sqlite
         run: |

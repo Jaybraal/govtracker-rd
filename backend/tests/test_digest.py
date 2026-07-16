@@ -2,8 +2,8 @@ from app.models.alert import Alert, AlertType, AlertSeverity
 from app.services.digest import build_digest
 
 
-def _alert(severidad, titulo, monto=None):
-    return Alert(tipo=AlertType.CONTRATO_GRANDE, severidad=severidad, titulo=titulo,
+def _alert(severidad, titulo, monto=None, tipo=AlertType.CONTRATO_GRANDE):
+    return Alert(tipo=tipo, severidad=severidad, titulo=titulo,
                  entidad_tipo="contrato", entidad_id=1, monto_involucrado=monto)
 
 
@@ -36,3 +36,19 @@ def test_trunca_a_20_por_severidad_y_avisa_cuantos_mas():
     assert "hallazgo 19" in texto
     assert "hallazgo 20" not in texto
     assert "y 5 más" in texto
+
+
+def test_alertas_por_nombre_sin_cedula_incluyen_disclaimer():
+    texto = build_digest([_alert(
+        AlertSeverity.ALTA, "Posible doble cobro en nómina: Fulano de Tal",
+        tipo=AlertType.NOMINA_DOBLE_COBRO,
+    )])
+    assert "Posible doble cobro en nómina: Fulano de Tal · sin verificar" in texto
+
+
+def test_alertas_no_relacionadas_a_personas_no_incluyen_disclaimer():
+    texto = build_digest([_alert(
+        AlertSeverity.ALTA, "contrato grande", monto=150_000_000,
+        tipo=AlertType.CONTRATO_GRANDE,
+    )])
+    assert "sin verificar" not in texto
