@@ -8,7 +8,11 @@ on:
 jobs:
   investigar:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # pgr_comunicados es incremental pero en frío recorre las 100 páginas
+    # del archivo histórico antes de poder saltarse nada — 45min no le
+    # alcanzaba (verificado: se cortó en la página 77/100). Corridas
+    # posteriores, con estado ya guardado, serán mucho más rápidas.
+    timeout-minutes: 150
     defaults:
       run:
         working-directory: backend
